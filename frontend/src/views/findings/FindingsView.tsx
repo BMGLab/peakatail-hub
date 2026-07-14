@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { createColumnHelper, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table'
 import { useVirtualizer } from '@tanstack/react-virtual'
@@ -68,6 +68,16 @@ export function FindingsView() {
     getScrollElement: () => parentRef.current,
     estimateSize: () => 32,
     overscan: 12,
+    // Root cause of the "totalSize is right but getVirtualItems() is always
+    // []" bug: virtual-core's calculateRange() bails to `null` whenever
+    // outerSize===0, and outerSize falls back to `options.initialRect`
+    // (default {width:0,height:0}) until the ResizeObserver set up by
+    // observeElementRect fires at least once. In this environment that
+    // observer callback was never firing (headless/sandboxed rendering
+    // quirk), so the range stayed permanently null. A non-zero
+    // initialRect makes the very first render usable; a real
+    // ResizeObserver tick (if it ever comes) still overwrites it later.
+    initialRect: { width: 0, height: 600 },
   })
 
   function updateFilter<K extends keyof FindingsParams>(key: K, value: FindingsParams[K]) {
@@ -98,7 +108,16 @@ export function FindingsView() {
   }
 
   const facets = facetsQuery.data
-  const virtualItems = useMemo(() => virtualizer.getVirtualItems(), [virtualizer])
+  // NOT `useMemo(..., [virtualizer])` -- `virtualizer` is the SAME mutated-
+  // in-place instance across renders (react-virtual doesn't hand back a new
+  // object each render), so a memo keyed on its reference computes
+  // getVirtualItems() exactly once (on mount, before any row was measured
+  // or the scroll element had a size) and then NEVER recomputes as data
+  // loads -- this was the actual cause of "totalSize is right but zero
+  // <tr>s render": virtual-core already does its own correctly-keyed
+  // internal memoization, so this just needs to be called fresh every
+  // render, not re-wrapped in an outer memo with the wrong deps.
+  const virtualItems = virtualizer.getVirtualItems()
 
   return (
     <div className="findings-view">
@@ -195,9 +214,7 @@ export function FindingsView() {
 
       <section className="findings-view__table-wrap">
         <div className="findings-view__toolbar">
-          <span>
-            {findingsQuery.data ? `${findingsQuery.data.total} findings (showing ${rows.length})` : ''}
-          </span>
+          <span>{findingsQuery.data ? `${findingsQuery.data.total} findings (showing ${rows.length})` : ''}</span>
           <button type="button" disabled={selectedIds.size === 0} onClick={pinSelected}>
             Pin selected genes ({selectedIds.size})
           </button>
@@ -240,7 +257,7 @@ export function FindingsView() {
                     <tr
                       key={row.id}
                       data-index={vi.index}
-                      style={{ position: 'absolute', top: 0, left: 0, right: 0, transform: `translateY(${vi.start}px)`, display: 'table', width: '100%', tableLayout: 'fixed' }}
+                      style={{ position: 'absolute', top: 0, left: 0, right: 0, transform: `translateY(${vi.start}px)`, width: '100%' }}
                       onClick={() => {
                         select({ kind: 'gene', data: { gene_id: original.gene_id, gene_name: original.gene_id, chrom: '', start: 0, end: 0, strand: '+', n_pas: 0 } })
                         navigate(`/genes/${original.gene_id}`)

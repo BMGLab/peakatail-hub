@@ -74,8 +74,37 @@
 
 .findings-view__table {
   width: 100%;
-  border-collapse: collapse;
   font-size: 12px;
+}
+
+/*
+ * Rows are flex boxes, not real <table> rows, on BOTH thead and the
+ * virtualized (absolutely-positioned) tbody rows -- deliberately NOT
+ * `display: table` per row + `table-layout: fixed`. That combination looks
+ * like the standard "react-virtual + HTML table" recipe, but an
+ * absolutely-positioned <tr> is taken out of normal table flow while still
+ * being a literal DOM child of a real <table>/<tbody>; the two facts
+ * fighting each other produced 0-width columns for every cell here (Chromium
+ * observed getBoundingClientRect().width === 0 on populated <td>s -- text
+ * was present in the DOM and confirmed via an accessibility-tree/html dump,
+ * just laid out at zero width, i.e. invisible). Flex rows with matching
+ * flex-basis on thead/tbody cells side-step the table layout algorithm
+ * entirely and don't care that each row is individually absolutely
+ * positioned.
+ */
+.findings-view__table thead tr,
+.findings-view__table tbody tr {
+  display: flex;
+  align-items: center;
+}
+
+.findings-view__table th,
+.findings-view__table td {
+  flex: 1 1 0;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .findings-view__table thead th {
@@ -91,9 +120,6 @@
 .findings-view__table tbody td {
   padding: 4px 8px;
   border-bottom: 1px solid var(--border);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .findings-view__table tbody tr {
@@ -105,6 +131,7 @@
 }
 
 .findings-view__select-col {
+  flex: 0 0 28px;
   width: 28px;
 }
 

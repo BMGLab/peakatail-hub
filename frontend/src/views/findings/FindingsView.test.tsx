@@ -20,6 +20,19 @@ describe('FindingsView', () => {
     expect(screen.getByRole('columnheader', { name: 'strategy' })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: 'caveats' })).toBeInTheDocument()
 
+    // Regression guard: the virtualized body must actually render <tr>s,
+    // not just report a correct "showing N" count in the toolbar. Two real
+    // bugs both produced "showing 240" with zero visible rows: (1)
+    // `useMemo(() => virtualizer.getVirtualItems(), [virtualizer])` never
+    // recomputed because `virtualizer` is the same mutated-in-place
+    // instance every render, so it froze at the empty result from before
+    // data loaded; (2) absolutely-positioned <tr>s styled `display: table`
+    // computed zero-width columns. Neither is visible from the toolbar text
+    // alone -- assert real row content is on screen too.
+    await waitFor(() => {
+      expect(document.querySelectorAll('.findings-view__table tbody tr').length).toBeGreaterThan(0)
+    })
+
     // Facet selects are populated from mock facets
     const strategySelect = await screen.findByRole('combobox', { name: /strategy/i })
     expect(within(strategySelect).getByRole('option', { name: 'nb_multi' })).toBeInTheDocument()
