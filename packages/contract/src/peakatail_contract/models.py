@@ -271,13 +271,15 @@ class PasLedgerRow(BaseModel):
     @computed_field  # type: ignore[prop-decorator]
     @property
     def pas_uid(self) -> str:
-        """Content-addressed PAS id (`chrom:end:strand`), per ids.pas_uid / spec §7d.
+        """Content-addressed PAS id (`chrom:pos:strand`, strand-aware 3'-summit
+        position -- NOT the raw `end` column), per ids.pas_uid / spec §7d.
 
         Exposed as a computed field (not a stored column) so it can never
-        drift out of sync with chrom/end/strand -- it is *derived*, not
-        independently settable.
+        drift out of sync with chrom/start/end/strand -- it is *derived*, not
+        independently settable. Formula aligned with engine-team's E1 message
+        (2026-07-14): `pos = end - 1 if strand == "+" else start`.
         """
-        return _mint_pas_uid(self.chrom, self.end, self.strand)
+        return _mint_pas_uid(self.chrom, self.start, self.end, self.strand)
 
 
 class CellLedgerRow(BaseModel):

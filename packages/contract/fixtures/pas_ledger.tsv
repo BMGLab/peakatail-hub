@@ -1,7 +1,7 @@
 orig_pas_key	chrom	start	end	strand	unified_pas_id	snap_distance_bp	gene_id	gene_distance_bp	tier	last_stage	dropped_at	drop_reason	pas_uid
-ds1:+:1	chr1	999	1000	+	unified_1	12.0	ENSG00000000001	50.0	TIER_1	clustering			chr1:1000:+
-ds1:+:2	chr1	1499	1500	+	unified_2	8.0	ENSG00000000001	550.0	TIER_2	clustering			chr1:1500:+
-ds1:-:3	chr2	4999	5000	-	unified_3	5.0	ENSG00000000002	30.0	TIER_1	clustering			chr2:5000:-
-ds1:-:4	chr2	5399	5400	-	unified_4	15.0	ENSG00000000002	430.0	TIER_2	clustering			chr2:5400:-
-ds1:+:5	chr3	9999	10000	+	unified_5					atlas_snap	atlas_snap	no atlas hit within atlas_distance=100	chr3:10000:+
-ds1:+:6	chr1	17999	18000	+	unified_6	20.0		8000.0	INTERGENIC	pas_gene_assignment	pas_gene_assignment	distance 8000bp > max_gene_distance=5000	chr1:18000:+
+ds1:+:1	chr1	999	1000	+	unified_1	12.0	ENSG00000000001	50.0	TIER_1	clustering			chr1:999:+
+ds1:+:2	chr1	1499	1500	+	unified_2	8.0	ENSG00000000001	550.0	TIER_2	clustering			chr1:1499:+
+ds1:-:3	chr2	4999	5000	-	unified_3	5.0	ENSG00000000002	30.0	TIER_1	clustering			chr2:4999:-
+ds1:-:4	chr2	5399	5400	-	unified_4	15.0	ENSG00000000002	430.0	TIER_2	clustering			chr2:5399:-
+ds1:+:5	chr3	9999	10000	+	unified_5					atlas_snap	atlas_snap	no atlas hit within atlas_distance=100	chr3:9999:+
+ds1:+:6	chr1	17999	18000	+	unified_6	20.0		8000.0	INTERGENIC	pas_gene_assignment	pas_gene_assignment	distance 8000bp > max_gene_distance=5000	chr1:17999:+

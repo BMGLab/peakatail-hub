@@ -2,37 +2,57 @@ from __future__ import annotations
 
 import pytest
 
-from peakatail_contract.ids import cell_uid, cluster_uid, finding_uid, pas_uid
+from peakatail_contract.ids import cell_uid, cluster_uid, finding_uid, pas_summit_pos, pas_uid
+
+
+class TestPasSummitPos:
+    """Strand-aware 3'-summit position, per engine-team's E1 alignment
+    (2026-07-14): pos = end - 1 if strand == '+' else start."""
+
+    def test_plus_strand_uses_end_minus_one(self):
+        assert pas_summit_pos(500, 1000, "+") == 999
+
+    def test_minus_strand_uses_start(self):
+        assert pas_summit_pos(500, 1000, "-") == 500
+
+    def test_invalid_strand_rejected(self):
+        with pytest.raises(ValueError):
+            pas_summit_pos(500, 1000, "*")
 
 
 class TestPasUid:
     def test_determinism(self):
-        assert pas_uid("chr1", 1000, "+") == pas_uid("chr1", 1000, "+")
+        assert pas_uid("chr1", 500, 1000, "+") == pas_uid("chr1", 500, 1000, "+")
 
-    def test_grammar(self):
-        assert pas_uid("chr1", 1000, "+") == "chr1:1000:+"
+    def test_grammar_plus_strand(self):
+        # pos = end - 1 = 999 on the '+' strand -- NOT the raw `end` (1000).
+        assert pas_uid("chr1", 500, 1000, "+") == "chr1:999:+"
+
+    def test_grammar_minus_strand(self):
+        # pos = start = 500 on the '-' strand -- the biological 3'-end.
+        assert pas_uid("chr1", 500, 1000, "-") == "chr1:500:-"
 
     def test_strand_disambiguation(self):
-        # The specific B1 bug this ID exists to prevent: same coordinate,
+        # The specific B1 bug this ID exists to prevent: same interval,
         # different strand, must NOT collide.
-        assert pas_uid("chr1", 1000, "+") != pas_uid("chr1", 1000, "-")
+        assert pas_uid("chr1", 500, 1000, "+") != pas_uid("chr1", 500, 1000, "-")
 
     def test_end_disambiguation(self):
-        assert pas_uid("chr1", 1000, "+") != pas_uid("chr1", 1001, "+")
+        assert pas_uid("chr1", 500, 1000, "+") != pas_uid("chr1", 500, 1001, "+")
 
     def test_chrom_disambiguation(self):
-        assert pas_uid("chr1", 1000, "+") != pas_uid("chr2", 1000, "+")
+        assert pas_uid("chr1", 500, 1000, "+") != pas_uid("chr2", 500, 1000, "+")
 
     def test_invalid_strand_rejected(self):
         with pytest.raises(ValueError):
-            pas_uid("chr1", 1000, "*")
+            pas_uid("chr1", 500, 1000, "*")
 
     def test_chrom_with_separator_rejected(self):
         with pytest.raises(ValueError):
-            pas_uid("chr1:foo", 1000, "+")
+            pas_uid("chr1:foo", 500, 1000, "+")
 
     def test_end_coerced_to_int(self):
-        assert pas_uid("chr1", "1000", "+") == "chr1:1000:+"
+        assert pas_uid("chr1", "500", "1000", "+") == "chr1:999:+"
 
 
 class TestCellUid:

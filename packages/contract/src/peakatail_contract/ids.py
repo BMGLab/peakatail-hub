@@ -45,23 +45,51 @@ def _check_no_sep(name: str, value: str) -> None:
         )
 
 
-def pas_uid(chrom: str, end: int, strand: str) -> str:
-    """Content-addressed PAS identifier: ``{chrom}:{end}:{strand}``.
+def pas_summit_pos(start: int, end: int, strand: str) -> int:
+    """Strand-aware 3'-summit genomic position from a BED interval.
+
+    BED intervals are always ``start < end`` (0-based, half-open) regardless
+    of strand, so the biological 3'-end is ``end - 1`` on the ``+`` strand
+    but ``start`` on the ``-`` strand. Per engine-team's E1 alignment
+    (frozen 2026-07-14): ``pos = end - 1 if strand == "+" else start``.
+
+    This function is the single source of truth for that formula -- do not
+    duplicate the ternary elsewhere; call this instead so a future formula
+    change only needs to happen here.
+    """
+    if strand not in ("+", "-"):
+        raise ValueError(f"strand must be '+' or '-', got {strand!r}")
+    return int(end) - 1 if strand == "+" else int(start)
+
+
+def pas_uid(chrom: str, start: int, end: int, strand: str) -> str:
+    """Content-addressed PAS identifier: ``{chrom}:{pos}:{strand}``, where
+    ``pos`` is the strand-aware 3'-summit position (see
+    :func:`pas_summit_pos`) -- NOT the raw BED ``end`` column.
 
     NOT ``{run}:{ds}:{pas_id}`` (superseded, see module docstring). Using the
     3'-end coordinate + strand makes the ID stable across re-runs, re-unifies,
     and even across datasets that call the *same* underlying PAS -- exactly
     the E1 "strand-safe merge key" fix in Data Controller Design §5.
 
-    Strand is a required, distinct field (not folded into ``end``) so that
+    Strand is a required, distinct field (not folded into ``pos``) so that
     ``chr1:1000:+`` and ``chr1:1000:-`` never collide -- this is the specific
     B1 bug (pos/neg strand PAS numbered from 1 independently) this ID grammar
     exists to prevent.
+
+    CORRECTNESS NOTE (2026-07-14): this formula was corrected to match
+    engine-team's E1 alignment message exactly -- an earlier version of this
+    function took the raw BED ``end`` column unconditionally, which is wrong
+    for ``-`` strand PAS (whose biological 3'-end is at ``start``, not
+    ``end``). Engine also emits an authoritative sidecar
+    ``unified/pas_uid.tsv`` (``new_pas_id, pas_uid``); this function must
+    independently reproduce those same values bit-for-bit given the same
+    ``(chrom, start, end, strand)`` -- if it ever doesn't, that sidecar wins
+    and this function has a bug.
     """
-    if strand not in ("+", "-"):
-        raise ValueError(f"strand must be '+' or '-', got {strand!r}")
     _check_no_sep("chrom", chrom)
-    return f"{chrom}{_SEP}{int(end)}{_SEP}{strand}"
+    pos = pas_summit_pos(start, end, strand)
+    return f"{chrom}{_SEP}{pos}{_SEP}{strand}"
 
 
 def cell_uid(dataset_id: str, barcode: str) -> str:

@@ -75,11 +75,12 @@ def test_pas_ledger_row_roundtrip_and_computed_pas_uid():
         drop_reason=None,
     )
     rehydrated = _roundtrip(PasLedgerRow, row)
-    assert rehydrated.pas_uid == "chr1:1000:+"
+    # start=999, end=1000, strand='+' -> pos = end - 1 = 999 (E1 formula).
+    assert rehydrated.pas_uid == "chr1:999:+"
     # pas_uid is a computed field: it must be present in the serialized form
     # too (not just accessible as a Python attribute), since the hub relies
     # on it being in the JSON that crosses the wire.
-    assert row.model_dump(mode="json")["pas_uid"] == "chr1:1000:+"
+    assert row.model_dump(mode="json")["pas_uid"] == "chr1:999:+"
 
 
 def test_pas_ledger_row_dropped_and_survivor_are_distinguishable():
