@@ -18,10 +18,22 @@ export interface UseGeneviewWindowResult {
  * `useGeneviewData(geneId, { start: window.start, end: window.end })` --
  * this hook only owns the window math/state, not the fetch.
  */
+const PLACEHOLDER_WINDOW: GenomicWindow = { chrom: '', start: 0, end: 1 }
+
+/** `gene.chrom`/`start`/`end` are nullable (backend schemas.py GeneSummary's
+ * `span` is null when the gene has zero surviving PAS) -- `GenomicWindow`
+ * itself stays non-nullable so CoordinateScale/every layer doesn't have to
+ * null-check; this is the one place that resolves "no real span yet" to
+ * the placeholder window. */
+function spanOf(gene: GeneSummary | null | undefined): GenomicWindow {
+  if (gene && gene.chrom !== null && gene.start !== null && gene.end !== null) {
+    return { chrom: gene.chrom, start: gene.start, end: gene.end }
+  }
+  return PLACEHOLDER_WINDOW
+}
+
 export function useGeneviewWindow(gene: GeneSummary | null | undefined): UseGeneviewWindowResult {
-  const geneSpan: GenomicWindow = gene
-    ? { chrom: gene.chrom, start: gene.start, end: gene.end }
-    : { chrom: '', start: 0, end: 1 }
+  const geneSpan: GenomicWindow = spanOf(gene)
 
   const [window, setWindowState] = useState<GenomicWindow>(geneSpan)
   const hasInitialized = useRef(false)
@@ -37,7 +49,7 @@ export function useGeneviewWindow(gene: GeneSummary | null | undefined): UseGene
   }, [gene])
 
   const resetToGeneSpan = useCallback(() => {
-    setWindowState(gene ? { chrom: gene.chrom, start: gene.start, end: gene.end } : { chrom: '', start: 0, end: 1 })
+    setWindowState(spanOf(gene))
   }, [gene])
 
   const zoomIn = useCallback(

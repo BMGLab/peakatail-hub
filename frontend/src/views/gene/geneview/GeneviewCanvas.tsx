@@ -1,5 +1,5 @@
 import { useRef } from 'react'
-import type { GeneviewLayerData, PasDetail } from '@lib/contract/types'
+import type { GeneviewLayerData, GeneviewPas } from '@lib/contract/types'
 import { createCoordinateScale } from './CoordinateScale'
 import { Ruler } from './Ruler'
 import { GeneModelLayer } from './GeneModelLayer'
@@ -21,7 +21,7 @@ interface GeneviewCanvasProps {
   onZoomOut: (centerBp?: number) => void
   onPan: (deltaBp: number) => void
   onResetToGeneSpan: () => void
-  onSelectPas?: ((pas: PasDetail) => void) | undefined
+  onSelectPas?: ((pas: GeneviewPas) => void) | undefined
 }
 
 /**

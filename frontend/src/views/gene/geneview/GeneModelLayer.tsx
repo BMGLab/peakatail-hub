@@ -16,6 +16,11 @@ interface GeneModelLayerProps {
  * exercised end to end.
  */
 export function GeneModelLayer({ scale, gene, height = 40 }: GeneModelLayerProps) {
+  // Callers (GeneView) only mount this layer once `gene.start`/`end` are
+  // confirmed non-null (span exists) -- see the `hasSpan` guard there.
+  // Falling back to 0 here would silently draw a zero-width/garbage model
+  // instead of the "coordinates unavailable" state GeneView already shows.
+  if (gene.start === null || gene.end === null) return null
   const x1 = scale.toPixel(gene.start)
   const x2 = scale.toPixel(gene.end)
   const midY = height / 2

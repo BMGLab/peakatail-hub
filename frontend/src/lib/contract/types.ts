@@ -131,16 +131,56 @@ export interface RunQc {
   gate_note: string
 }
 
+/**
+ * Backend schemas.py `GeneSummary` nests coordinates under `span:
+ * GeneSpan | null` (null when the gene has zero surviving PAS -- e.g. every
+ * assigned PAS was dropped) and has no `gene_name` at all (the contract has
+ * no Ensembl-id -> symbol mapping yet). `chrom`/`start`/`end`/`strand` here
+ * are therefore nullable -- client.ts flattens `span` onto this shape and
+ * falls back `gene_name` to `gene_id`; consumers MUST null-check before
+ * rendering coordinates (GeneView does, via `MissingArtifactNotice`) rather
+ * than assume a span always exists.
+ */
 export interface GeneSummary {
   gene_id: string
   gene_name: string
+  chrom: string | null
+  start: number | null
+  end: number | null
+  strand: '+' | '-' | null
+  n_pas: number
+}
+
+/**
+ * One row of `/genes/{id}/geneview-data`'s `pas` array (backend schemas.py
+ * `GeneviewPas`) -- windowed coordinates/tier/distances ONLY. Deliberately
+ * NOT full `PasDetail`: per spec §7a `/genes/{id}/counts` (the only path
+ * that opens clusters.h5ad) is a separate, heavier endpoint, so
+ * geneview-data was never meant to carry per-cluster counts. `PASStemLayer`
+ * needs a per-PAS count to size stems; `per_cluster_counts` here defaults
+ * to `{}` (flat stems) until a follow-up wires the two endpoints together --
+ * tracked as a known gap, not silently faked as real counts.
+ */
+export interface GeneviewPas {
+  pas_uid: string
   chrom: string
   start: number
   end: number
   strand: '+' | '-'
-  n_pas: number
+  unified_pas_id: string
+  gene_distance_bp: number | null
+  snap_distance_bp: number | null
+  tier: string | null
+  per_cluster_counts: Record<string, number>
 }
 
+/**
+ * `/pas/{id}` returns a plain `PasLedgerRow`; `/pas/{id}/provenance` wraps
+ * it in `{pas, findings, length_rows, trail}` (schemas.py `PasProvenance`).
+ * This flattened `PasDetail` is what `client.ts` normalizes BOTH into (see
+ * `getPas`/`getPasProvenance`) for the DetailPanel/AuditView -- not a shape
+ * either endpoint returns directly on the wire.
+ */
 export interface PasDetail extends PasLedgerRow {
   gene_name: string | null
   per_cluster_counts: Record<string, number>
@@ -157,11 +197,13 @@ export interface CellDetail extends CellLedgerRow {
 
 export interface GeneviewLayerData {
   gene: GeneSummary
-  window: { chrom: string; start: number; end: number }
-  pas: PasDetail[]
+  window: { chrom: string | null; start: number | null; end: number | null }
+  pas: GeneviewPas[]
   diff: FindingRow[]
   length: LengthRow[]
   coverage: null // roadmap B — coverage lane hidden in v1
+  /** Data-availability flags from backend schemas.py GeneviewData.gates (spec §5: fail loud, not blank). */
+  gates: string[]
 }
 
 export interface UmapPoint {
@@ -210,10 +252,14 @@ export interface SearchResult {
   sublabel: string | null
 }
 
-/** Union type for the shared DetailPanel's polymorphic selection. */
+/** Union type for the shared DetailPanel's polymorphic selection.
+ * `pas` accepts `GeneviewPas` too -- clicking a stem in the geneview canvas
+ * only has the windowed geneview-data shape on hand, not a full
+ * PasDetail/provenance fetch; DetailPanel renders the fields it has and
+ * falls back gracefully (`—`) for the ones only a full PasDetail carries. */
 export type SelectedEntity =
   | { kind: 'gene'; data: GeneSummary }
-  | { kind: 'pas'; data: PasDetail }
+  | { kind: 'pas'; data: PasDetail | GeneviewPas }
   | { kind: 'cell'; data: CellDetail }
 
 /** A pinned entity in the pin tray (subset of SelectedEntity, tagged for display). */

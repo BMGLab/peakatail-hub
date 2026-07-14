@@ -74,7 +74,7 @@ export const mockFindings: FindingRow[] = Array.from({ length: 240 }, (_, i) => 
   const qvalue = seeded(i, 1) * 0.2
   return {
     finding_uid: `finding-${i.toString().padStart(4, '0')}`,
-    pas_uid: `${gene.chrom}:${gene.start + i * 37}:${gene.strand}`,
+    pas_uid: `${gene.chrom}:${gene.start! + i * 37}:${gene.strand}`,
     gene_id: gene.gene_id,
     canonical_cluster: clusters[i % clusters.length]!,
     celltype: celltypes[i % celltypes.length]!,
@@ -95,7 +95,7 @@ export const mockLengths: LengthRow[] = Array.from({ length: 120 }, (_, i) => {
   const gene = genes[i % genes.length]!
   const strategy: LengthRow['strategy'] = (['classic', 'proportion', 'shannon'] as const)[i % 3]!
   return {
-    pas_uid: strategy === 'proportion' ? `${gene.chrom}:${gene.start + i * 41}:${gene.strand}` : null,
+    pas_uid: strategy === 'proportion' ? `${gene.chrom}:${gene.start! + i * 41}:${gene.strand}` : null,
     gene_id: gene.gene_id,
     transcript_id: `${gene.gene_id}-T1`,
     strategy,
@@ -110,14 +110,15 @@ export const mockLengths: LengthRow[] = Array.from({ length: 120 }, (_, i) => {
 export function mockPasForGene(geneId: string): PasDetail[] {
   const gene = genes.find((g) => g.gene_id === geneId)
   if (!gene) return []
+  const start = gene.start!
   return Array.from({ length: gene.n_pas }, (_, i) => ({
     orig_pas_key: `orig-${geneId}-${i}`,
-    chrom: gene.chrom,
-    start: gene.start + i * 400,
-    end: gene.start + i * 400 + 20,
-    strand: gene.strand,
+    chrom: gene.chrom!,
+    start: start + i * 400,
+    end: start + i * 400 + 20,
+    strand: gene.strand!,
     unified_pas_id: `unified-${geneId}-${i}`,
-    pas_uid: `${gene.chrom}:${gene.start + i * 400 + 10}:${gene.strand}`,
+    pas_uid: `${gene.chrom}:${start + i * 400 + 10}:${gene.strand}`,
     snap_distance_bp: i === 0 ? 0 : 12 * i,
     gene_id: gene.gene_id,
     gene_distance_bp: 50 * i,
@@ -142,6 +143,7 @@ export function mockGeneviewData(geneId: string): GeneviewLayerData | null {
     diff: mockFindings.filter((f) => f.gene_id === geneId),
     length: mockLengths.filter((l) => l.gene_id === geneId),
     coverage: null,
+    gates: [],
   }
 }
 

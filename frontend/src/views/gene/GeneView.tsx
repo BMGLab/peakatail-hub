@@ -40,6 +40,7 @@ export function GeneView() {
 
   const gene = geneQuery.data
   const geneviewData = dataQuery.data
+  const hasSpan = gene.chrom !== null && gene.start !== null && gene.end !== null && gene.strand !== null
 
   const pduiTrace = {
     x: geneviewData?.length.map((l) => l.canonical_cluster) ?? [],
@@ -55,7 +56,7 @@ export function GeneView() {
         <h2>{gene.gene_name}</h2>
         <span className="mono">{gene.gene_id}</span>
         <span className="badge badge--neutral">
-          {gene.chrom}:{gene.start}-{gene.end} ({gene.strand})
+          {hasSpan ? `${gene.chrom}:${gene.start}-${gene.end} (${gene.strand})` : 'coordinates unavailable'}
         </span>
       </header>
 
@@ -63,7 +64,10 @@ export function GeneView() {
         <LayerPanel state={layers} onChange={setLayers} />
 
         <div className="gene-view__main">
-          {geneviewData ? (
+          {/* span is null when the gene has zero surviving PAS -- the
+              canvas needs real start/end/strand to lay out its coordinate
+              scale, so fail loud (spec §5) rather than feed it nulls. */}
+          {geneviewData && hasSpan ? (
             <GeneviewCanvas
               data={geneviewData}
               window={geneviewWindow.window}

@@ -1,13 +1,13 @@
-import type { PasDetail } from '@lib/contract/types'
+import type { GeneviewPas } from '@lib/contract/types'
 import type { CoordinateScale } from './CoordinateScale'
 
 interface PASStemLayerProps {
   scale: CoordinateScale
-  pas: PasDetail[]
+  pas: GeneviewPas[]
   /** Which clusters' counts to sum for stem height; empty = all clusters. */
   clusters?: string[] | undefined
   height?: number
-  onSelect?: ((pas: PasDetail) => void) | undefined
+  onSelect?: ((pas: GeneviewPas) => void) | undefined
 }
 
 /**

@@ -13,6 +13,7 @@ import type {
   FindingRow,
   GeneSummary,
   GeneviewLayerData,
+  LengthRow,
   PasDetail,
   RunQc,
   RunSummary,
@@ -112,6 +113,68 @@ export interface FindingsFacets {
   utr_class: string[]
 }
 
+// Backend schemas.py GeneSpan/GeneSummary -- coordinates nested under a
+// nullable `span` (null when the gene has zero surviving PAS), no
+// `gene_name` field at all (no Ensembl-id -> symbol mapping in the
+// contract yet).
+interface BackendGeneSpan {
+  chrom: string
+  start: number
+  end: number
+  strand: '+' | '-'
+  n_pas: number
+}
+
+interface BackendGeneSummary {
+  gene_id: string
+  run_id: string
+  n_pas: number
+  n_findings: number
+  n_length_rows: number
+  span: BackendGeneSpan | null
+}
+
+/** Flattens a wire-shape GeneSummary into the frontend's ergonomic flat
+ * shape; `gene_name` falls back to `gene_id` (no symbol mapping exists
+ * yet) -- shared by both `getGene` and `getGeneviewData` (the latter's
+ * `/genes/{id}/geneview-data` response embeds the same gene_id/span pair,
+ * just without n_findings/n_length_rows scoped the same way, which is why
+ * that call site passes its own window-scoped counts through). */
+function toFrontendGeneSummary(g: BackendGeneSummary): GeneSummary {
+  return {
+    gene_id: g.gene_id,
+    gene_name: g.gene_id,
+    chrom: g.span?.chrom ?? null,
+    start: g.span?.start ?? null,
+    end: g.span?.end ?? null,
+    strand: g.span?.strand ?? null,
+    n_pas: g.n_pas,
+  }
+}
+
+interface BackendGeneviewPas {
+  pas_uid: string
+  chrom: string
+  start: number
+  end: number
+  strand: '+' | '-'
+  unified_pas_id: string
+  gene_distance_bp: number | null
+  snap_distance_bp: number | null
+  tier: string | null
+}
+
+interface BackendGeneviewData {
+  gene_id: string
+  run_id: string
+  span: BackendGeneSpan | null
+  window: { start: number | null; end: number | null }
+  pas: BackendGeneviewPas[]
+  findings: FindingRow[]
+  length_rows: LengthRow[]
+  gates: string[]
+}
+
 export const api = {
   getRuns(): Promise<RunSummary[]> {
     if (USE_MOCKS) return delay(mockRuns)
@@ -183,15 +246,30 @@ export const api = {
 
   getGene(id: string): Promise<GeneSummary | null> {
     if (USE_MOCKS) return delay(mockGenes.find((g) => g.gene_id === id) ?? null)
-    return fetchJson(`/genes/${id}`)
+    return fetchJson<BackendGeneSummary>(`/genes/${id}`).then(toFrontendGeneSummary)
   },
 
   getGeneviewData(
     id: string,
-    _params?: { start?: number; end?: number; lod?: number; clusters?: string[]; diff_strategies?: string[]; length_strategies?: string[] },
+    params?: { start?: number; end?: number; lod?: number; clusters?: string[]; diff_strategies?: string[]; length_strategies?: string[] },
   ): Promise<GeneviewLayerData | null> {
     if (USE_MOCKS) return delay(mockGeneviewData(id))
-    return fetchJson(`/genes/${id}/geneview-data`)
+    return fetchJson<BackendGeneviewData>(`/genes/${id}/geneview-data`, {
+      start: params?.start,
+      end: params?.end,
+    }).then((r) => ({
+      gene: toFrontendGeneSummary({ gene_id: r.gene_id, run_id: r.run_id, n_pas: r.pas.length, n_findings: r.findings.length, n_length_rows: r.length_rows.length, span: r.span }),
+      window: { chrom: r.span?.chrom ?? null, start: r.window.start, end: r.window.end },
+      // GeneviewPas has no per_cluster_counts on the wire (spec §7a: the
+      // heavy /genes/{id}/counts join is a separate endpoint) -- default to
+      // {} (flat stems) rather than fabricate numbers; PASStemLayer/
+      // DetailPanel both degrade gracefully on an empty object.
+      pas: r.pas.map((p) => ({ ...p, per_cluster_counts: {} })),
+      diff: r.findings,
+      length: r.length_rows,
+      coverage: null,
+      gates: r.gates,
+    }))
   },
 
   getGeneCounts(id: string): Promise<PasDetail[]> {
