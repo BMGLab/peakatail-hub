@@ -19,8 +19,12 @@ function ComparePanel({ entity }: { entity: PinnedEntity }) {
         ) : geneQuery.data ? (
           <dl className="compare-view__fields">
             <dt>locus</dt>
+            {/* span is null when the gene has zero surviving PAS -- same
+                nullable-coordinates rule as GeneView/DetailPanel (spec §5). */}
             <dd>
-              {geneQuery.data.chrom}:{geneQuery.data.start}-{geneQuery.data.end}
+              {geneQuery.data.chrom !== null && geneQuery.data.start !== null && geneQuery.data.end !== null
+                ? `${geneQuery.data.chrom}:${geneQuery.data.start}-${geneQuery.data.end}`
+                : 'coordinates unavailable'}
             </dd>
             <dt>n_pas</dt>
             <dd>{geneQuery.data.n_pas}</dd>
