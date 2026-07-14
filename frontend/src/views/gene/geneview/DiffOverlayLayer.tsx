@@ -24,12 +24,14 @@ const DIRECTION_COLOR: Record<FindingRow['direction'], string> = {
  * Coordinates are derived from `pas_uid` per docs §7d (never the diff TSV's
  * own coord columns, which are blank until engine change B4).
  */
+/** Bare SVG children (no own `<svg>`) -- caller (GeneviewSvg) positions this
+ * row inside the composed document so toggled overlays export too. */
 export function DiffOverlayLayer({ scale, findings, strategy, qMax = 1, significantOnly = false, rowHeight = 24 }: DiffOverlayLayerProps) {
   const rows = findings.filter((f) => f.strategy === strategy && f.qvalue <= qMax && (!significantOnly || f.qvalue <= 0.05))
 
   return (
-    <svg width={scale.pixelWidth} height={rowHeight} className="geneview-layer geneview-layer--diff-overlay" data-strategy={strategy}>
-      <text x={4} y={rowHeight - 8} fontSize={9} fill="var(--text-dim)">
+    <g className="geneview-layer geneview-layer--diff-overlay" data-strategy={strategy}>
+      <text x={4} y={rowHeight - 8} fontSize={9} style={{ fill: 'var(--track-tick)' }}>
         diff: {strategy}
       </text>
       {rows.map((f) => {
@@ -45,6 +47,6 @@ export function DiffOverlayLayer({ scale, findings, strategy, qMax = 1, signific
           </circle>
         )
       })}
-    </svg>
+    </g>
   )
 }

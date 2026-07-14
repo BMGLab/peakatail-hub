@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import { Route, Routes } from 'react-router-dom'
 import { renderWithProviders } from '../../test/testUtils'
+import type { useScopeStore as UseScopeStoreType } from '@state/useScopeStore'
 
 /**
  * Regression test for a real bug found via a real headless-Chromium smoke
@@ -27,6 +28,7 @@ describe('GeneView against real backend wire shapes', () => {
   const backendGeneSummary = {
     gene_id: GENE_ID,
     run_id: 'fixture-run-0001',
+    gene_name: 'TESTA1',
     n_pas: 2,
     n_findings: 2,
     n_length_rows: 4,
@@ -36,6 +38,7 @@ describe('GeneView against real backend wire shapes', () => {
   const backendGeneviewData = {
     gene_id: GENE_ID,
     run_id: 'fixture-run-0001',
+    gene_name: 'TESTA1',
     span: backendGeneSummary.span,
     window: { start: 999, end: 1500 },
     pas: [
@@ -68,6 +71,32 @@ describe('GeneView against real backend wire shapes', () => {
       { strategy: 'classic', gene_id: GENE_ID, transcript_id: null, cell_uid: 'ds1:AAACCCAAGT', canonical_cluster: 'cl_A', value: 0.62, pas_uid: null, rank: null, direction: null },
     ],
     gates: [],
+    // The exact fields (`isoforms`/`cluster_tracks`, backend schemas.py
+    // GeneviewIsoform/GeneviewClusterTrack) that a stale GeneviewCanvas used
+    // to crash on (`data.isoforms.length` reading `undefined`, see the
+    // regression this test now also guards against).
+    isoforms: [
+      { transcript_id: 'ENST00000000001', exons: [[850, 900], [950, 1500]] },
+      { transcript_id: 'ENST00000000002', exons: [[850, 900], [950, 1000]] },
+    ],
+    cluster_tracks: [
+      {
+        cluster: 'cl_A',
+        n_cells: 3,
+        values: [
+          { pas_uid: 'chr1:999:+', reads_per_cell: 4.2, proportion: 0.7 },
+          { pas_uid: 'chr1:1499:+', reads_per_cell: 1.8, proportion: 0.3 },
+        ],
+      },
+      {
+        cluster: 'cl_B',
+        n_cells: 3,
+        values: [
+          { pas_uid: 'chr1:999:+', reads_per_cell: 0, proportion: null },
+          { pas_uid: 'chr1:1499:+', reads_per_cell: 0, proportion: null },
+        ],
+      },
+    ],
   }
 
   let GeneView: typeof import('./GeneView').GeneView
@@ -89,6 +118,15 @@ describe('GeneView against real backend wire shapes', () => {
       }),
     )
     ;({ GeneView } = await import('./GeneView'))
+    // GeneView now requires a Scope (backend genes.py `_resolve_run_id`
+    // 400s once more than one run is indexed, see GeneView.tsx's `!runId`
+    // guard) -- pick one, same as a real user picking it from the TopBar.
+    // Dynamically re-imported (not the top-of-file static import) so this
+    // reaches the SAME module instance `vi.resetModules()` just gave
+    // `GeneView.tsx`'s own `import { useScopeStore }` -- a statically
+    // imported reference here would be a stale pre-reset copy of the store.
+    const { useScopeStore }: { useScopeStore: typeof UseScopeStoreType } = await import('@state/useScopeStore')
+    useScopeStore.getState().setScope('fixture-run-0001', 'fixture-run-0001')
   })
 
   afterEach(() => {
@@ -114,6 +152,31 @@ describe('GeneView against real backend wire shapes', () => {
     expect(screen.getByText('chr1:999:+')).toBeInTheDocument()
     expect(screen.getByText('chr1:1499:+')).toBeInTheDocument()
     expect(screen.getByText('TIER_1')).toBeInTheDocument()
+
+    // The geneview canvas itself: title includes the GTF-resolved gene
+    // symbol + Ensembl id + coordinates + PAS count (the CLIC2-figure
+    // format), proving `gene_name`/`isoforms`/`cluster_tracks` all made it
+    // through the wire-shape translation without crashing GeneviewCanvas
+    // (the regression this test exists for: a stale canvas read
+    // `data.isoforms.length` on a response that didn't carry `isoforms` at
+    // all and threw, unmounting the whole view -- see backendGeneviewData's
+    // `isoforms`/`cluster_tracks` fields above).
+    expect(screen.getByText(/Gene TESTA1 \(ENSG00000000001\)/)).toBeInTheDocument()
+
+    // Isoform track: both transcript ids from `isoforms` render.
+    expect(screen.getByText('ENST00000000001')).toBeInTheDocument()
+    expect(screen.getByText('ENST00000000002')).toBeInTheDocument()
+
+    // Per-cluster proportion tracks: both cluster row labels render, and
+    // the 70%/30% split for cl_A shows up as bar percent labels.
+    expect(screen.getByText('cluster cl_A')).toBeInTheDocument()
+    expect(screen.getByText('cluster cl_B')).toBeInTheDocument()
+    expect(screen.getByText('70%')).toBeInTheDocument()
+    expect(screen.getByText('30%')).toBeInTheDocument()
+
+    // PAS bands: one label per PAS position, spanning the tracks.
+    expect(screen.getByText('999')).toBeInTheDocument()
+    expect(screen.getByText('1499')).toBeInTheDocument()
   })
 
   it('shows "coordinates unavailable" instead of crashing when span is null (gene has zero surviving PAS)', async () => {

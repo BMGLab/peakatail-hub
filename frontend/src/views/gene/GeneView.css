@@ -29,6 +29,12 @@
   gap: 16px;
 }
 
+.gene-view__gates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .gene-view__companions {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));

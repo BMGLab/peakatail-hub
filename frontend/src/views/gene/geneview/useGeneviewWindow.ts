@@ -24,10 +24,21 @@ const PLACEHOLDER_WINDOW: GenomicWindow = { chrom: '', start: 0, end: 1 }
  * `span` is null when the gene has zero surviving PAS) -- `GenomicWindow`
  * itself stays non-nullable so CoordinateScale/every layer doesn't have to
  * null-check; this is the one place that resolves "no real span yet" to
- * the placeholder window. */
+ * the placeholder window.
+ *
+ * Pads 5% of the span on each side (min 1bp) -- mirrors PeakATail's own
+ * `gene_track_matplotlib.py` (`pad = int(gene_span * 0.05) + 1`). Without
+ * this, a PAS sitting exactly at `gene.start`/`gene.end` (common: the
+ * gene's own span IS derived from its outermost surviving PAS, see
+ * `queries.gene_pas_span`) renders flush against the plot's left/right
+ * edge -- its band label gets clipped and its bar's percent label collides
+ * with the y-axis tick label at x=0, an unreadable overlap on the
+ * fixture's tightest-zoom default view. */
 function spanOf(gene: GeneSummary | null | undefined): GenomicWindow {
   if (gene && gene.chrom !== null && gene.start !== null && gene.end !== null) {
-    return { chrom: gene.chrom, start: gene.start, end: gene.end }
+    const span = Math.max(gene.end - gene.start, 1)
+    const pad = Math.round(span * 0.05) + 1
+    return { chrom: gene.chrom, start: Math.max(0, gene.start - pad), end: gene.end + pad }
   }
   return PLACEHOLDER_WINDOW
 }

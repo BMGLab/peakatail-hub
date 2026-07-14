@@ -8,39 +8,107 @@
   display: flex;
   gap: 6px;
   align-items: center;
+  flex-wrap: wrap;
 }
 
 .geneview-canvas__toolbar button {
   padding: 4px 8px;
   font-size: 12px;
-  border-radius: var(--radius);
-  border: 1px solid var(--border);
-  background: var(--bg-elevated);
-  color: var(--text);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--line);
+  background: var(--bg-surface);
+  color: var(--ink-body);
+  cursor: pointer;
 }
 
+.geneview-canvas__toolbar button:hover {
+  background: var(--bg-hover);
+}
+
+.geneview-canvas__locus {
+  font-size: 12px;
+  color: var(--ink-body);
+  padding: 2px 8px;
+  border-radius: var(--radius-md);
+  background: var(--bg-sunken);
+}
+
+.geneview-canvas__hint {
+  font-size: 11px;
+  color: var(--ink-faint);
+  margin-left: auto;
+}
+
+/* The track canvas is ALWAYS a light "paper" surface -- matching the
+   packaged matplotlib figure -- even when the surrounding chrome is in dark
+   theme (tokens.css §3: "The GENEVIEW TRACK CANVAS is always light"). */
 .geneview-canvas__stack {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  background: var(--track-well);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
   padding: 8px;
   overflow-x: auto;
 }
 
-.geneview-layer {
+.geneview-svg {
   display: block;
 }
 
-.geneview-layer--pas-stems .geneview-layer__caveat,
+.geneview-svg__bg {
+  fill: var(--track-canvas);
+}
+
+.geneview-svg__title {
+  font-size: 13px;
+  font-weight: var(--fw-semibold);
+  fill: var(--track-ink);
+}
+
+.geneview-svg__row-label {
+  font-size: 10px;
+  fill: var(--track-label);
+}
+
+.geneview-svg__row-label--dim {
+  fill: var(--track-tick);
+}
+
+.geneview-svg__drag-surface {
+  fill: transparent;
+  cursor: grab;
+}
+
+.geneview-svg__drag-surface:active {
+  cursor: grabbing;
+}
+
+.geneview-svg__box-preview {
+  fill: var(--highlight-band);
+  stroke: var(--accent);
+  stroke-width: 1;
+  stroke-dasharray: 3 2;
+  pointer-events: none;
+}
+
+.pas-bands__rect,
+.cluster-proportion-track__bar {
+  cursor: pointer;
+}
+
+.cluster-proportion-track__bar:hover {
+  filter: brightness(1.12);
+}
+
+.pas-stem {
+  cursor: pointer;
+}
+
 .geneview-layer__caveat {
   display: flex;
   align-items: center;
   gap: 6px;
   font-size: 10px;
-  color: var(--text-dim);
+  color: var(--ink-muted);
   padding: 2px 0 4px;
 }
 
@@ -48,12 +116,41 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px dashed var(--border);
-  border-radius: var(--radius);
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-md);
 }
 
 .geneview-layer__stub-note {
-  color: var(--text-dim);
+  color: var(--ink-muted);
   font-size: 11px;
+  font-style: italic;
+}
+
+/* Floating hover tooltip (GeneviewTooltip.tsx) -- fixed-positioned HTML, not
+   part of the exported svg (transient chrome, not the "view"). */
+.geneview-tooltip {
+  position: fixed;
+  z-index: var(--z-popover);
+  background: var(--bg-raised);
+  color: var(--ink-body);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-pop);
+  padding: 8px 10px;
+  font-size: 11px;
+  line-height: 1.4;
+  pointer-events: none;
+  max-width: 260px;
+}
+
+.geneview-tooltip__title {
+  font-weight: var(--fw-semibold);
+  color: var(--ink);
+  margin-bottom: 2px;
+}
+
+.geneview-tooltip__hint {
+  color: var(--ink-faint);
+  margin-top: 4px;
   font-style: italic;
 }

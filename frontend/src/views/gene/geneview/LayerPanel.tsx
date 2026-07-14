@@ -10,10 +10,14 @@ export interface GeneviewLayerState {
   qMax: number
 }
 
+// The base view is the per-cluster proportion tracks (always rendered,
+// matching PeakATail's own gene-track figure) -- every overlay below is
+// opt-in, so a freshly-opened geneview reads exactly like the reference
+// figure rather than being cluttered with every strategy at once.
 export const DEFAULT_LAYER_STATE: GeneviewLayerState = {
-  pasStems: true,
-  diffStrategies: new Set(['fisher', 'nb_pairwise', 'nb_multi']),
-  lengthStrategies: new Set(['classic', 'proportion', 'shannon']),
+  pasStems: false,
+  diffStrategies: new Set(),
+  lengthStrategies: new Set(),
   coverage: false,
   significantOnly: false,
   qMax: 1,
@@ -48,11 +52,11 @@ export function LayerPanel({ state, onChange }: LayerPanelProps) {
       <h4>Layers</h4>
       <label className="layer-panel__row">
         <input type="checkbox" checked disabled />
-        Ruler + gene model (always on)
+        Isoforms + per-cluster proportions (always on)
       </label>
-      <label className="layer-panel__row">
+      <label className="layer-panel__row" title="Raw per-PAS read stems (legacy view) -- not UMI-deduplicated">
         <input type="checkbox" checked={state.pasStems} onChange={(e) => onChange({ ...state, pasStems: e.target.checked })} />
-        PAS stems
+        PAS read stems (raw)
       </label>
 
       <fieldset className="layer-panel__group">

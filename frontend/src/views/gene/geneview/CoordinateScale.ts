@@ -59,6 +59,17 @@ export function panWindow(window: GenomicWindow, deltaBp: number): GenomicWindow
   return { ...window, start, end: start + span }
 }
 
+/** Box-zoom: set the window to exactly the genomic range between two
+ * positions (order-independent, min 20bp span so a near-zero-width drag
+ * doesn't produce a degenerate/unusable window). Used by the drag-to-zoom
+ * interaction (design brief "Zoom (scroll/box)"). */
+export function windowFromRange(window: GenomicWindow, bpA: number, bpB: number): GenomicWindow {
+  const lo = Math.max(0, Math.min(bpA, bpB))
+  const hi = Math.max(bpA, bpB)
+  const span = Math.max(20, hi - lo)
+  return { ...window, start: Math.round(lo), end: Math.round(lo + span) }
+}
+
 /** Parse the interim `pas_uid` grammar (`chrom:pos:strand`) used by mock data
  * and the E1-minted IDs described in the design spec. Returns null if the
  * string doesn't match (defensive -- never crash the renderer on bad IDs). */

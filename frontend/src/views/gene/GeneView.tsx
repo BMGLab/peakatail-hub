@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useGene, useGeneviewData } from '@lib/api/hooks'
 import { useSelectionStore } from '@state/useSelectionStore'
+import { useScopeStore } from '@state/useScopeStore'
 import { useGeneviewWindow } from './geneview/useGeneviewWindow'
 import { GeneviewCanvas } from './geneview/GeneviewCanvas'
 import { LayerPanel, DEFAULT_LAYER_STATE, type GeneviewLayerState } from './geneview/LayerPanel'
@@ -11,8 +12,14 @@ import './GeneView.css'
 
 export function GeneView() {
   const { geneId } = useParams<{ geneId: string }>()
-  const geneQuery = useGene(geneId ?? null)
-  const dataQuery = useGeneviewData(geneId ?? null)
+  // The backend 400s `/genes/{id}` and `/genes/{id}/geneview-data` once
+  // more than one run is indexed unless `run_id` is passed (genes.py
+  // `_resolve_run_id` refuses to guess) -- thread the TopBar Scope
+  // selector's run through rather than assume there's exactly one run, the
+  // way a single-source dev fixture used to make true by accident.
+  const runId = useScopeStore((s) => s.runId)
+  const geneQuery = useGene(geneId ?? null, runId)
+  const dataQuery = useGeneviewData(geneId ?? null, undefined, runId)
   const [layers, setLayers] = useState<GeneviewLayerState>(DEFAULT_LAYER_STATE)
   const select = useSelectionStore((s) => s.select)
 
@@ -20,6 +27,14 @@ export function GeneView() {
 
   if (!geneId) {
     return <EmptyState reason="no-match" detail="No gene selected." />
+  }
+
+  // Mirrors QcView's own guard: the backend refuses to guess `run_id` once
+  // more than one run is indexed (genes.py `_resolve_run_id`), so a gene
+  // reached before any Scope is picked would otherwise surface as a raw
+  // "run_id query param is required" 400 rather than a normal empty state.
+  if (!runId) {
+    return <EmptyState reason="no-match" detail="Select a run from the top bar scope selector first." />
   }
 
   if (geneQuery.isLoading || dataQuery.isLoading) {
@@ -67,6 +82,16 @@ export function GeneView() {
           {/* span is null when the gene has zero surviving PAS -- the
               canvas needs real start/end/strand to lay out its coordinate
               scale, so fail loud (spec §5) rather than feed it nulls. */}
+          {geneviewData?.gates.length ? (
+            <div className="gene-view__gates">
+              {geneviewData.gates.map((g) => (
+                <span key={g} className="badge badge--warn">
+                  ⚠ {g}
+                </span>
+              ))}
+            </div>
+          ) : null}
+
           {geneviewData && hasSpan ? (
             <GeneviewCanvas
               data={geneviewData}
@@ -76,6 +101,7 @@ export function GeneView() {
               onZoomOut={geneviewWindow.zoomOut}
               onPan={geneviewWindow.pan}
               onResetToGeneSpan={geneviewWindow.resetToGeneSpan}
+              onSetWindow={geneviewWindow.setWindow}
               onSelectPas={(pas) => select({ kind: 'pas', data: pas })}
             />
           ) : (

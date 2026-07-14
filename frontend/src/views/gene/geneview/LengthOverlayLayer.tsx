@@ -27,6 +27,8 @@ const DIRECTION_MARK: Record<NonNullable<LengthRow['direction']>, string> = {
  * render as a summary badge instead of per-PAS ticks below. That's a design
  * choice about row grain, not a gated/missing-data state.
  */
+/** Bare SVG children (no own `<svg>`) -- caller (GeneviewSvg) positions this
+ * row inside the composed document so toggled overlays export too. */
 export function LengthOverlayLayer({ scale, lengths, strategy, directionFilter, rowHeight = 24 }: LengthOverlayLayerProps) {
   const rows = lengths.filter((l) => l.strategy === strategy && (!directionFilter || l.direction === directionFilter))
   const perPas = rows.filter((r) => r.pas_uid !== null)
@@ -34,17 +36,17 @@ export function LengthOverlayLayer({ scale, lengths, strategy, directionFilter, 
 
   if (aggregateOnly) {
     return (
-      <div className="geneview-layer geneview-layer--length-overlay" data-strategy={strategy} style={{ height: rowHeight }}>
-        <span className="badge badge--neutral" title="classic/shannon length values are per-cell/per-gene, not per-PAS -- a row-grain difference, not missing data">
-          length: {strategy} (aggregate only, {rows.length} cells)
-        </span>
-      </div>
+      <g className="geneview-layer geneview-layer--length-overlay" data-strategy={strategy}>
+        <text x={4} y={rowHeight / 2 + 4} fontSize={9} style={{ fill: 'var(--track-tick)' }}>
+          length: {strategy} (aggregate only, {rows.length} cells -- classic/shannon are per-cell/per-gene, not per-PAS)
+        </text>
+      </g>
     )
   }
 
   return (
-    <svg width={scale.pixelWidth} height={rowHeight} className="geneview-layer geneview-layer--length-overlay" data-strategy={strategy}>
-      <text x={4} y={rowHeight - 8} fontSize={9} fill="var(--text-dim)">
+    <g className="geneview-layer geneview-layer--length-overlay" data-strategy={strategy}>
+      <text x={4} y={rowHeight - 8} fontSize={9} style={{ fill: 'var(--track-tick)' }}>
         length: {strategy}
       </text>
       {perPas.map((l, i) => {
@@ -52,7 +54,7 @@ export function LengthOverlayLayer({ scale, lengths, strategy, directionFilter, 
         if (!parsed) return null
         const x = scale.toPixel(parsed.pos)
         return (
-          <text key={`${l.pas_uid}-${i}`} x={x} y={rowHeight / 2 + 4} fontSize={12} textAnchor="middle" fill="var(--text)">
+          <text key={`${l.pas_uid}-${i}`} x={x} y={rowHeight / 2 + 4} fontSize={12} textAnchor="middle" style={{ fill: 'var(--track-ink)' }}>
             {l.direction ? DIRECTION_MARK[l.direction] : '?'}
             <title>
               {l.pas_uid} · value={l.value.toFixed(3)} · {l.direction ?? 'unknown'}
@@ -60,6 +62,6 @@ export function LengthOverlayLayer({ scale, lengths, strategy, directionFilter, 
           </text>
         )
       })}
-    </svg>
+    </g>
   )
 }

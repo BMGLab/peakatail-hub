@@ -1,7 +1,7 @@
 import { useNavigate } from 'react-router-dom'
 import { useSelectionStore } from '@state/useSelectionStore'
 import { usePinStore } from '@state/usePinStore'
-import type { CellDetail, GeneSummary, GeneviewPas, PasDetail, SelectedEntity } from '@lib/contract/types'
+import type { CellDetail, GeneSummary, GeneviewPas, GeneviewPasSelection, PasDetail, SelectedEntity } from '@lib/contract/types'
 import './DetailPanel.css'
 
 function labelFor(entity: SelectedEntity): string {
@@ -51,8 +51,17 @@ function isFullPasDetail(pas: PasDetail | GeneviewPas): pas is PasDetail {
   return 'last_stage' in pas
 }
 
-function PasFields({ pas }: { pas: PasDetail | GeneviewPas }) {
+/** True for a `GeneviewPasSelection` -- a PAS clicked off the geneview
+ * canvas's cluster-proportion bars/PAS bands, enriched at click-time with
+ * whatever the canvas already had in hand (see that type's doc comment).
+ * Purely additive: absent on a plain `GeneviewPas`/`PasDetail`. */
+function isGeneviewSelection(pas: PasDetail | GeneviewPas | GeneviewPasSelection): pas is GeneviewPasSelection {
+  return 'cluster_proportions' in pas || 'diff_summary' in pas || 'length_summary' in pas
+}
+
+function PasFields({ pas }: { pas: PasDetail | GeneviewPas | GeneviewPasSelection }) {
   const full = isFullPasDetail(pas) ? pas : null
+  const enriched = isGeneviewSelection(pas) ? pas : null
   return (
     <>
       <dl className="detail-panel__fields">
@@ -100,6 +109,76 @@ function PasFields({ pas }: { pas: PasDetail | GeneviewPas }) {
           ))}
         </tbody>
       </table>
+
+      {enriched?.cluster_proportions && Object.keys(enriched.cluster_proportions).length > 0 && (
+        <>
+          <h4>Within-gene proportion by cluster</h4>
+          <table className="detail-panel__table">
+            <thead>
+              <tr>
+                <th>cluster</th>
+                <th>proportion</th>
+              </tr>
+            </thead>
+            <tbody>
+              {Object.entries(enriched.cluster_proportions).map(([cluster, p]) => (
+                <tr key={cluster}>
+                  <td>{cluster}</td>
+                  <td>{p === null ? '—' : `${(p * 100).toFixed(0)}%`}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+
+      {enriched?.diff_summary && enriched.diff_summary.length > 0 && (
+        <>
+          <h4>switch diff (called strategies)</h4>
+          <table className="detail-panel__table">
+            <thead>
+              <tr>
+                <th>strategy</th>
+                <th>q</th>
+                <th>Δ proportion</th>
+                <th>direction</th>
+              </tr>
+            </thead>
+            <tbody>
+              {enriched.diff_summary.map((d) => (
+                <tr key={d.strategy}>
+                  <td>{d.strategy}</td>
+                  <td>{d.qvalue.toFixed(4)}</td>
+                  <td>{d.delta_proportion.toFixed(3)}</td>
+                  <td>{d.direction}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+
+      {enriched?.length_summary && enriched.length_summary.length > 0 && (
+        <>
+          <h4>switch length (direction by strategy)</h4>
+          <table className="detail-panel__table">
+            <thead>
+              <tr>
+                <th>strategy</th>
+                <th>direction</th>
+              </tr>
+            </thead>
+            <tbody>
+              {enriched.length_summary.map((l) => (
+                <tr key={l.strategy}>
+                  <td>{l.strategy}</td>
+                  <td>{l.direction ?? '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
     </>
   )
 }

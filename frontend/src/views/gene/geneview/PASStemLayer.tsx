@@ -13,7 +13,8 @@ interface PASStemLayerProps {
 /**
  * Each PAS a stick at its 3' end; height = read count in selected
  * cluster/celltype (design doc §1.2). Counts are NOT UMI-deduplicated --
- * caveat surfaced via the legend, not hidden.
+ * caveat surfaced inline, not hidden. Bare SVG children -- caller
+ * (GeneviewSvg) positions this row inside the composed document.
  */
 export function PASStemLayer({ scale, pas, clusters, height = 60, onSelect }: PASStemLayerProps) {
   const heights = pas.map((p) => {
@@ -24,35 +25,32 @@ export function PASStemLayer({ scale, pas, clusters, height = 60, onSelect }: PA
   const maxHeight = Math.max(1, ...heights)
 
   return (
-    <div className="geneview-layer geneview-layer--pas-stems">
-      <svg width={scale.pixelWidth} height={height}>
-        {pas.map((p, i) => {
-          const x = scale.toPixel(p.end)
-          const h = (heights[i]! / maxHeight) * (height - 12)
-          return (
-            <g
-              key={p.pas_uid}
-              className="pas-stem"
-              tabIndex={0}
-              role="button"
-              aria-label={`PAS ${p.pas_uid}`}
-              onClick={() => onSelect?.(p)}
-              style={{ cursor: onSelect ? 'pointer' : undefined }}
-            >
-              <line x1={x} y1={height - 2} x2={x} y2={height - 2 - h} stroke="var(--accent)" strokeWidth={2} />
-              <circle cx={x} cy={height - 2 - h} r={3} fill="var(--accent)">
-                <title>
-                  {p.pas_uid} · tier={p.tier ?? '—'} · reads={heights[i]}
-                </title>
-              </circle>
-            </g>
-          )
-        })}
-      </svg>
-      <div className="geneview-layer__caveat">
-        <span className="badge badge--warn">⚠ not UMI-deduplicated</span>
-        <span>stem height = raw read count, molecule-inflated</span>
-      </div>
-    </div>
+    <g className="geneview-layer geneview-layer--pas-stems">
+      {pas.map((p, i) => {
+        const x = scale.toPixel(p.end)
+        const h = (heights[i]! / maxHeight) * (height - 12)
+        return (
+          <g
+            key={p.pas_uid}
+            className="pas-stem"
+            tabIndex={0}
+            role="button"
+            aria-label={`PAS ${p.pas_uid}`}
+            onClick={() => onSelect?.(p)}
+            style={{ cursor: onSelect ? 'pointer' : undefined }}
+          >
+            <line x1={x} y1={height - 2} x2={x} y2={height - 2 - h} style={{ stroke: 'var(--accent)' }} strokeWidth={2} />
+            <circle cx={x} cy={height - 2 - h} r={3} style={{ fill: 'var(--accent)' }}>
+              <title>
+                {p.pas_uid} · tier={p.tier ?? '—'} · reads={heights[i]}
+              </title>
+            </circle>
+          </g>
+        )
+      })}
+      <text x={4} y={height - 2} fontSize={8} style={{ fill: 'var(--warn)' }}>
+        ⚠ raw read stems (not UMI-deduplicated)
+      </text>
+    </g>
   )
 }
