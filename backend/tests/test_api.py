@@ -97,6 +97,7 @@ def test_gene_summary(client):
     assert body["span"]["chrom"] == "chr1"
     assert body["span"]["start"] == 999
     assert body["span"]["end"] == 1500
+    assert body["gene_name"] == "TESTA1"
 
 
 def test_geneview_data_sources_coords_from_ledger_not_findings(client):
@@ -120,6 +121,46 @@ def test_geneview_data_window_filters_by_bounds(client):
     ).json()
     assert len(narrow["pas"]) == 1
     assert narrow["pas"][0]["end"] == 1000
+
+
+def test_geneview_data_isoforms_and_cluster_tracks(client):
+    resp = client.get("/genes/ENSG00000000001/geneview-data")
+    assert resp.status_code == 200
+    body = resp.json()
+
+    assert body["gene_name"] == "TESTA1"
+
+    isoforms = body["isoforms"]
+    assert len(isoforms) == 2
+    for isoform in isoforms:
+        assert isoform["transcript_id"].startswith("ENST")
+        assert len(isoform["exons"]) > 0
+
+    tracks = body["cluster_tracks"]
+    assert len(tracks) == 2
+    assert [t["cluster"] for t in tracks] == ["cl_A", "cl_B"]
+    for track in tracks:
+        assert track["n_cells"] > 0
+        assert len(track["values"]) == len(body["pas"]) == 2
+
+    # At least one cluster had reads for this gene; its PAS proportions
+    # should sum to ~1.0 (mirrors the matplotlib reference's
+    # row-normalised proportions).
+    summed = [
+        sum(v["proportion"] for v in t["values"] if v["proportion"] is not None)
+        for t in tracks
+        if any(v["proportion"] is not None for v in t["values"])
+    ]
+    assert summed, "expected at least one cluster with non-null proportions"
+    assert any(abs(s - 1.0) < 1e-6 for s in summed)
+
+
+def test_geneview_data_no_gtf_match_degrades_gracefully(client):
+    resp = client.get("/genes/ENSG_NOT_A_GENE/geneview-data")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["gene_name"] == ""
+    assert body["isoforms"] == []
 
 
 def test_gene_counts_heavy_path(client):
@@ -249,3 +290,109 @@ def test_concordance_and_benchmarks_are_honest_stubs(client, fixture_run_id: str
     resp2 = client.get("/benchmarks", params={"run_id": fixture_run_id})
     assert resp2.status_code == 200
     assert resp2.json()["available"] is False
+
+
+# --------------------------------------------------------------------------
+# browse: GET /genes, /pas, /cells (searchable, paginated lists)
+# --------------------------------------------------------------------------
+
+
+def test_genes_list_returns_every_gene_with_surviving_pas(client):
+    resp = client.get("/genes")
+    assert resp.status_code == 200
+    page = resp.json()
+    assert page["total"] == 2
+    gene_ids = {g["gene_id"] for g in page["items"]}
+    assert gene_ids == {"ENSG00000000001", "ENSG00000000002"}
+    # aggregate fields, not a bare id list
+    one = next(g for g in page["items"] if g["gene_id"] == "ENSG00000000001")
+    assert one["n_pas"] == 2
+    assert one["n_findings"] == 2
+    assert one["chrom"] == "chr1"
+
+
+def test_genes_list_search_by_substring(client):
+    resp = client.get("/genes", params={"q": "0000002"})
+    assert resp.status_code == 200
+    page = resp.json()
+    assert page["total"] == 1
+    assert page["items"][0]["gene_id"] == "ENSG00000000002"
+
+
+def test_genes_list_locus_overlap_search(client):
+    """The TopBar's "jump to chr:coords" search resolves a raw genomic
+    interval to the gene(s) whose span overlaps it -- not an exact match.
+    """
+    resp = client.get("/genes", params={"chrom": "chr1", "start": 1000, "end": 1100})
+    assert resp.status_code == 200
+    page = resp.json()
+    assert page["total"] == 1
+    assert page["items"][0]["gene_id"] == "ENSG00000000001"
+
+    # A window with no gene under it finds nothing (not a fail-open match).
+    resp2 = client.get("/genes", params={"chrom": "chr1", "start": 900_000, "end": 900_100})
+    assert resp2.json()["total"] == 0
+
+
+def test_genes_list_pagination(client):
+    resp = client.get("/genes", params={"limit": 1})
+    page = resp.json()
+    assert page["total"] == 2
+    assert len(page["items"]) == 1
+    assert page["next_cursor"] is not None
+
+    resp2 = client.get("/genes", params={"limit": 1, "cursor": page["next_cursor"]})
+    page2 = resp2.json()
+    assert len(page2["items"]) == 1
+    assert page2["next_cursor"] is None
+    assert page["items"][0]["gene_id"] != page2["items"][0]["gene_id"]
+
+
+def test_pas_list_includes_dropped_rows(client):
+    """Unlike the geneview-data feed, the PAS browser is a provenance
+    browser -- dropped PAS stay visible with their drop reason.
+    """
+    resp = client.get("/pas")
+    assert resp.status_code == 200
+    page = resp.json()
+    assert page["total"] == 6  # matches qc funnel's n_pas_total
+    dropped = [p for p in page["items"] if p["dropped_at"]]
+    assert len(dropped) >= 1
+    assert any(p["drop_reason"] for p in dropped)
+
+
+def test_pas_list_search_by_gene_id(client):
+    resp = client.get("/pas", params={"q": "ENSG00000000002"})
+    assert resp.status_code == 200
+    page = resp.json()
+    assert page["total"] == 2
+    assert all(p["gene_id"] == "ENSG00000000002" for p in page["items"])
+
+
+def test_cells_list_includes_dropped_rows(client):
+    resp = client.get("/cells")
+    assert resp.status_code == 200
+    page = resp.json()
+    assert page["total"] == 7  # matches qc funnel's n_cells_total
+    dropped = [c for c in page["items"] if c["dropped_at"]]
+    assert len(dropped) >= 1
+
+
+def test_cells_list_search_by_barcode(client):
+    resp = client.get("/cells", params={"q": "AAACCCAAGT"})
+    assert resp.status_code == 200
+    page = resp.json()
+    assert page["total"] == 1
+    assert page["items"][0]["barcode"] == "AAACCCAAGT"
+
+
+def test_pas_and_cells_list_accept_explicit_run_id(client, fixture_run_id: str):
+    """Same `?run_id=` override every other endpoint in this module accepts."""
+    resp = client.get("/pas", params={"run_id": fixture_run_id, "limit": 1})
+    assert resp.status_code == 200
+    resp2 = client.get("/cells", params={"run_id": fixture_run_id, "limit": 1})
+    assert resp2.status_code == 200
+
+    resp3 = client.get("/pas", params={"run_id": "does-not-exist"})
+    assert resp3.status_code == 200
+    assert resp3.json()["total"] == 0

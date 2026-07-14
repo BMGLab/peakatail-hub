@@ -11,22 +11,83 @@ import { caveatFlagsFor } from './caveatFlags'
 import { EmptyState, ErrorState, LoadingState } from '@views/shared/ViewStates'
 import './FindingsView.css'
 
+// Per-column display width (px), read via `column.columnDef.meta.width` in
+// the header/cell render below. FIX: every column previously rendered with
+// a uniform `flex: 1 1 0` (see FindingsView.css's docstring for why rows
+// are flex boxes, not a real <table> layout) -- that gives every column an
+// EQUAL share of the available width regardless of content, which is what
+// squeezed `finding_uid`/`gene_id`/`arm`/`utr_class` down to unreadable
+// "cl_A…/ENS…/tand…" truncation. Real per-column widths (id-shaped columns
+// get more room, short enums get less) fix that; `.truncate` + a `title`
+// attribute keeps the still-truncated long values inspectable on hover.
+declare module '@tanstack/react-table' {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  interface ColumnMeta<TData, TValue> {
+    /** Column width in px -- rendered as `flex: 0 0 <width>px` (no grow/shrink competing with neighbors). */
+    width: number
+    /** Right-align + tabular-nums styling for numeric columns. */
+    numeric?: boolean
+  }
+}
+
 const columnHelper = createColumnHelper<FindingRow>()
 
 const columns = [
-  columnHelper.accessor('finding_uid', { header: 'finding', cell: (c) => <span className="mono">{c.getValue()}</span> }),
-  columnHelper.accessor('gene_id', { header: 'gene' }),
-  columnHelper.accessor('arm', { header: 'arm' }),
-  columnHelper.accessor('strategy', { header: 'strategy' }),
-  columnHelper.accessor('celltype', { header: 'celltype', cell: (c) => c.getValue() ?? '—' }),
-  columnHelper.accessor('direction', { header: 'direction' }),
-  columnHelper.accessor('utr_class', { header: 'utr_class', cell: (c) => c.getValue() ?? '—' }),
-  columnHelper.accessor('qvalue', { header: 'q', cell: (c) => c.getValue().toFixed(4) }),
-  columnHelper.accessor('delta_proportion', { header: 'Δ proportion', cell: (c) => c.getValue().toFixed(3) }),
-  columnHelper.accessor('n_reads', { header: 'n_reads' }),
+  columnHelper.accessor('finding_uid', {
+    header: 'finding',
+    meta: { width: 340 },
+    cell: (c) => (
+      <span className="mono truncate" title={c.getValue()}>
+        {c.getValue()}
+      </span>
+    ),
+  }),
+  columnHelper.accessor('gene_id', {
+    header: 'gene',
+    meta: { width: 150 },
+    cell: (c) => (
+      <span className="mono truncate" title={c.getValue()}>
+        {c.getValue()}
+      </span>
+    ),
+  }),
+  columnHelper.accessor('arm', {
+    header: 'arm',
+    meta: { width: 150 },
+    cell: (c) => (
+      <span className="truncate" title={c.getValue()}>
+        {c.getValue()}
+      </span>
+    ),
+  }),
+  columnHelper.accessor('strategy', { header: 'strategy', meta: { width: 110 } }),
+  columnHelper.accessor('celltype', {
+    header: 'celltype',
+    meta: { width: 150 },
+    cell: (c) => {
+      const v = c.getValue()
+      return v ? (
+        <span className="truncate" title={v}>
+          {v}
+        </span>
+      ) : (
+        '—'
+      )
+    },
+  }),
+  columnHelper.accessor('direction', { header: 'direction', meta: { width: 110 } }),
+  columnHelper.accessor('utr_class', { header: 'utr_class', meta: { width: 120 }, cell: (c) => c.getValue() ?? '—' }),
+  columnHelper.accessor('qvalue', { header: 'q', meta: { width: 80, numeric: true }, cell: (c) => c.getValue().toFixed(4) }),
+  columnHelper.accessor('delta_proportion', {
+    header: 'Δ proportion',
+    meta: { width: 120, numeric: true },
+    cell: (c) => c.getValue().toFixed(3),
+  }),
+  columnHelper.accessor('n_reads', { header: 'n_reads', meta: { width: 90, numeric: true } }),
   columnHelper.display({
     id: 'caveats',
     header: 'caveats',
+    meta: { width: 180 },
     cell: (c) => {
       const flags = caveatFlagsFor(c.row.original)
       if (flags.length === 0) return null
@@ -242,9 +303,18 @@ export function FindingsView() {
                 {table.getHeaderGroups().map((hg) => (
                   <tr key={hg.id}>
                     <th className="findings-view__select-col" />
-                    {hg.headers.map((h) => (
-                      <th key={h.id}>{flexRender(h.column.columnDef.header, h.getContext())}</th>
-                    ))}
+                    {hg.headers.map((h) => {
+                      const meta = h.column.columnDef.meta
+                      return (
+                        <th
+                          key={h.id}
+                          style={meta ? { flex: `0 0 ${meta.width}px`, width: meta.width } : undefined}
+                          className={meta?.numeric ? 'num' : undefined}
+                        >
+                          {flexRender(h.column.columnDef.header, h.getContext())}
+                        </th>
+                      )
+                    })}
                   </tr>
                 ))}
               </thead>
@@ -271,9 +341,18 @@ export function FindingsView() {
                           onChange={() => toggleSelected(original)}
                         />
                       </td>
-                      {row.getVisibleCells().map((cell) => (
-                        <td key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</td>
-                      ))}
+                      {row.getVisibleCells().map((cell) => {
+                        const meta = cell.column.columnDef.meta
+                        return (
+                          <td
+                            key={cell.id}
+                            style={meta ? { flex: `0 0 ${meta.width}px`, width: meta.width } : undefined}
+                            className={meta?.numeric ? 'num' : undefined}
+                          >
+                            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                          </td>
+                        )
+                      })}
                     </tr>
                   )
                 })}

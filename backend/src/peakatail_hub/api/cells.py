@@ -1,14 +1,34 @@
 from __future__ import annotations
 
 import duckdb
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from peakatail_contract import CellLedgerRow
-from peakatail_hub.api.deps import get_db
-from peakatail_hub.schemas import CellProvenance
+from peakatail_hub.api.deps import get_db, resolve_run_id
+from peakatail_hub.schemas import CellProvenance, CellsPage
 from peakatail_hub.store import queries
 
 router = APIRouter(prefix="/cells", tags=["cells"])
+
+
+@router.get("", response_model=CellsPage)
+def list_cells(
+    q: str | None = Query(default=None, description="Substring match on barcode / cell_uid / cluster."),
+    run_id: str | None = Query(default=None),
+    cursor: str | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=500),
+    con: duckdb.DuckDBPyConnection = Depends(get_db),
+) -> CellsPage:
+    """The cell browser: searchable, paginated listing over the full cell
+    ledger (survived + dropped, same rationale as `list_pas`).
+    """
+    rid = resolve_run_id(con, run_id)
+    offset = queries.decode_cursor(cursor)
+    total = queries.count_cells(con, rid, q)
+    rows = queries.list_cells(con, rid, q, offset, limit)
+    next_offset = offset + limit
+    next_cursor = queries.encode_cursor(next_offset) if next_offset < total else None
+    return CellsPage(items=[CellLedgerRow(**r) for r in rows], next_cursor=next_cursor, total=total)
 
 
 @router.get("/{cell_uid}", response_model=CellLedgerRow)

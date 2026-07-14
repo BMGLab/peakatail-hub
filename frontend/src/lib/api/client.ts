@@ -10,28 +10,40 @@
 import type {
   BackendSearchResults,
   CellDetail,
+  CellLedgerRow,
   FindingRow,
+  GeneListRow,
   GeneSummary,
+  GeneviewClusterTrack,
+  GeneviewIsoform,
   GeneviewLayerData,
   LengthRow,
   PasDetail,
+  PasLedgerRow,
   RunQc,
   RunSummary,
   SearchResult,
+  Source,
+  SourceScanReport,
+  SourceScanResult,
   StubResponse,
   UmapPoint,
 } from '@lib/contract/types'
 import {
   mockBenchmarks,
   mockCells,
+  mockCellsPage,
   mockConcordance,
   mockFindings,
   mockGenes,
+  mockGenesPage,
   mockGeneviewData,
   mockPasForGene,
+  mockPasPage,
   mockRunQc,
   mockRuns,
   mockSearch,
+  mockSources,
   mockUmap,
 } from './mockData'
 
@@ -54,9 +66,62 @@ async function fetchJson<T>(path: string, params?: Record<string, string | numbe
   return (await res.json()) as T
 }
 
+// POST/DELETE variant of fetchJson -- the sources router (add/delete/rescan)
+// is the first mutating surface this client talks to (everything else is a
+// GET). Surfaces the backend's `detail` message on 4xx (e.g. "Path does not
+// exist: ...") rather than a bare status code, since the SOURCES panel needs
+// to show that text directly to the user.
+async function sendJson<T>(method: 'POST' | 'DELETE', path: string, body?: unknown): Promise<T> {
+  const url = new URL(`${API_BASE}${path}`, window.location.origin)
+  // `exactOptionalPropertyTypes` forbids assigning an explicit `undefined` to
+  // RequestInit's optional `headers`/`body` keys -- omit the keys entirely
+  // (via spread) rather than set them to `undefined`, instead of widening
+  // RequestInit's own types.
+  const init: RequestInit = {
+    method,
+    ...(body !== undefined ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {}),
+  }
+  const res = await fetch(url.toString(), init)
+  if (!res.ok) {
+    const detail = await res
+      .json()
+      .then((j) => (typeof j?.detail === 'string' ? j.detail : null))
+      .catch(() => null)
+    throw new Error(detail ?? `API error ${res.status} for ${path}`)
+  }
+  if (res.status === 204) return undefined as T
+  return (await res.json()) as T
+}
+
 // Simulated network latency so loading states are visible/testable in dev.
 function delay<T>(value: T, ms = 120): Promise<T> {
   return new Promise((resolve) => setTimeout(() => resolve(value), ms))
+}
+
+// ---------------------------------------------------------------------------
+// Sources (dashboard multi-directory manager) -- mock-mode state.
+//
+// Every other mock in this file is a pure derivation of static fixture data;
+// this is the one surface with real mutations (add/rescan/delete), so it
+// needs a live, mutable store. A browser `fetch`-free mock can't actually
+// walk a filesystem, so `addMockSource`/`rescanMockSource` never discover
+// real runs -- they only exercise the CRUD/error-path UI (empty-path,
+// duplicate-path, unknown-id), which is what the SOURCES panel needs to be
+// developable without the real backend running.
+// ---------------------------------------------------------------------------
+
+let mockSourcesState: Source[] = mockSources.map((s) => ({ ...s }))
+let mockSourceCounter = 0
+
+function emptyScanReport(): SourceScanReport {
+  return { indexed: [], skipped_unchanged: [], failed: {} }
+}
+
+function mockScanSource(source: Source): SourceScanResult {
+  source.last_scanned_at = new Date().toISOString()
+  source.last_scan_status = 'empty'
+  source.last_scan_error = 'No run_manifest.json found anywhere under this path (mock mode never walks a real filesystem).'
+  return { source: { ...source }, scan: emptyScanReport() }
 }
 
 export interface FindingsParams {
@@ -78,6 +143,68 @@ export interface FindingsParams {
 export interface FindingsPage {
   rows: FindingRow[]
   nextCursor: string | null
+  total: number
+}
+
+// ---------------------------------------------------------------------------
+// Browse: GET /genes, /pas, /cells -- same page-envelope shape as
+// FindingsPage above (rows/nextCursor/total, translated from the backend's
+// snake_case items/next_cursor/total). Backing the gene/PAS/cell browsers +
+// the TopBar location bar's chr:coords -> gene resolution.
+// ---------------------------------------------------------------------------
+
+export interface GenesBrowseParams {
+  q?: string
+  /** Locus-overlap filter (not exact-match) -- resolves a raw chr:start-end
+   * search to the gene(s) whose span overlaps it. All three optional. */
+  chrom?: string
+  start?: number
+  end?: number
+  run_id?: string
+  cursor?: string
+  limit?: number
+}
+
+export interface BrowseParams {
+  q?: string
+  run_id?: string
+  cursor?: string
+  limit?: number
+}
+
+export interface GenesBrowsePage {
+  rows: GeneListRow[]
+  nextCursor: string | null
+  total: number
+}
+
+export interface PasBrowsePage {
+  rows: PasLedgerRow[]
+  nextCursor: string | null
+  total: number
+}
+
+export interface CellsBrowsePage {
+  rows: CellLedgerRow[]
+  nextCursor: string | null
+  total: number
+}
+
+interface BackendGenesPage {
+  items: GeneListRow[]
+  next_cursor: string | null
+  total: number
+}
+
+interface BackendPasPage {
+  items: PasLedgerRow[]
+  next_cursor: string | null
+  total: number
+}
+
+interface BackendCellsPage {
+  items: CellLedgerRow[]
+  next_cursor: string | null
   total: number
 }
 
@@ -114,9 +241,11 @@ export interface FindingsFacets {
 }
 
 // Backend schemas.py GeneSpan/GeneSummary -- coordinates nested under a
-// nullable `span` (null when the gene has zero surviving PAS), no
-// `gene_name` field at all (no Ensembl-id -> symbol mapping in the
-// contract yet).
+// nullable `span` (null when the gene has zero surviving PAS). `gene_name`
+// is now backend-sourced (GTF `gene_name` attribute, see genes.py) but is
+// `""` (never null/absent) when no GTF was configured for the run or the
+// gene wasn't found in it -- treat empty-string as "unknown", not as a
+// signal to trust `gene_id` as a symbol.
 interface BackendGeneSpan {
   chrom: string
   start: number
@@ -128,6 +257,7 @@ interface BackendGeneSpan {
 interface BackendGeneSummary {
   gene_id: string
   run_id: string
+  gene_name: string
   n_pas: number
   n_findings: number
   n_length_rows: number
@@ -135,15 +265,16 @@ interface BackendGeneSummary {
 }
 
 /** Flattens a wire-shape GeneSummary into the frontend's ergonomic flat
- * shape; `gene_name` falls back to `gene_id` (no symbol mapping exists
- * yet) -- shared by both `getGene` and `getGeneviewData` (the latter's
+ * shape; `gene_name` falls back to `gene_id` only when the backend's own
+ * `gene_name` is empty (no GTF configured / gene not found in it) -- shared
+ * by both `getGene` and `getGeneviewData` (the latter's
  * `/genes/{id}/geneview-data` response embeds the same gene_id/span pair,
  * just without n_findings/n_length_rows scoped the same way, which is why
  * that call site passes its own window-scoped counts through). */
 function toFrontendGeneSummary(g: BackendGeneSummary): GeneSummary {
   return {
     gene_id: g.gene_id,
-    gene_name: g.gene_id,
+    gene_name: g.gene_name || g.gene_id,
     chrom: g.span?.chrom ?? null,
     start: g.span?.start ?? null,
     end: g.span?.end ?? null,
@@ -167,12 +298,15 @@ interface BackendGeneviewPas {
 interface BackendGeneviewData {
   gene_id: string
   run_id: string
+  gene_name: string
   span: BackendGeneSpan | null
   window: { start: number | null; end: number | null }
   pas: BackendGeneviewPas[]
   findings: FindingRow[]
   length_rows: LengthRow[]
   gates: string[]
+  isoforms: GeneviewIsoform[]
+  cluster_tracks: GeneviewClusterTrack[]
 }
 
 // `/pas/{id}` and `/pas/{id}/provenance`'s `.pas` both serialize
@@ -259,21 +393,44 @@ export const api = {
     return fetchJson(`/findings/${id}`)
   },
 
-  getGene(id: string): Promise<GeneSummary | null> {
+  // `run_id` is REQUIRED once more than one run is indexed (backend
+  // genes.py `_resolve_run_id` 400s rather than guess) -- both callers
+  // thread the TopBar Scope selector's `useScopeStore().runId` through
+  // (see GeneView.tsx), so a real multi-run/multi-source deployment (the
+  // dashboard's SOURCES manager can register >1) never silently 400s the
+  // geneview centerpiece just because a second run exists.
+  getGene(id: string, runId?: string): Promise<GeneSummary | null> {
     if (USE_MOCKS) return delay(mockGenes.find((g) => g.gene_id === id) ?? null)
-    return fetchJson<BackendGeneSummary>(`/genes/${id}`).then(toFrontendGeneSummary)
+    return fetchJson<BackendGeneSummary>(`/genes/${id}`, { run_id: runId }).then(toFrontendGeneSummary)
   },
 
   getGeneviewData(
     id: string,
-    params?: { start?: number; end?: number; lod?: number; clusters?: string[]; diff_strategies?: string[]; length_strategies?: string[] },
+    params?: {
+      start?: number
+      end?: number
+      lod?: number
+      clusters?: string[]
+      diff_strategies?: string[]
+      length_strategies?: string[]
+      run_id?: string
+    },
   ): Promise<GeneviewLayerData | null> {
     if (USE_MOCKS) return delay(mockGeneviewData(id))
     return fetchJson<BackendGeneviewData>(`/genes/${id}/geneview-data`, {
       start: params?.start,
       end: params?.end,
+      run_id: params?.run_id,
     }).then((r) => ({
-      gene: toFrontendGeneSummary({ gene_id: r.gene_id, run_id: r.run_id, n_pas: r.pas.length, n_findings: r.findings.length, n_length_rows: r.length_rows.length, span: r.span }),
+      gene: toFrontendGeneSummary({
+        gene_id: r.gene_id,
+        run_id: r.run_id,
+        gene_name: r.gene_name,
+        n_pas: r.pas.length,
+        n_findings: r.findings.length,
+        n_length_rows: r.length_rows.length,
+        span: r.span,
+      }),
       window: { chrom: r.span?.chrom ?? null, start: r.window.start, end: r.window.end },
       // GeneviewPas has no per_cluster_counts on the wire (spec §7a: the
       // heavy /genes/{id}/counts join is a separate endpoint) -- default to
@@ -284,6 +441,8 @@ export const api = {
       length: r.length_rows,
       coverage: null,
       gates: r.gates,
+      isoforms: r.isoforms,
+      clusterTracks: r.cluster_tracks,
     }))
   },
 
@@ -372,5 +531,99 @@ export const api = {
       ...r.pas.map((p) => ({ kind: 'pas' as const, id: p.pas_uid, label: p.pas_uid, sublabel: p.gene_id || null })),
       ...r.cells.map((c) => ({ kind: 'cell' as const, id: c.cell_uid, label: c.cell_uid, sublabel: c.dataset_id })),
     ])
+  },
+
+  // -------------------------------------------------------------------------
+  // Browse: the gene/PAS/cell browsers (searchable, paginated, virtualized
+  // lists -- see views/browse/**) plus the TopBar location bar's chr:coords
+  // resolution (listGenes with chrom/start/end set, no `q`).
+  // -------------------------------------------------------------------------
+
+  listGenes(params: GenesBrowseParams): Promise<GenesBrowsePage> {
+    if (USE_MOCKS) return delay(mockGenesPage(params))
+    return fetchJson<BackendGenesPage>('/genes', params as Record<string, string | number | undefined>).then((p) => ({
+      rows: p.items,
+      nextCursor: p.next_cursor,
+      total: p.total,
+    }))
+  },
+
+  listPas(params: BrowseParams): Promise<PasBrowsePage> {
+    if (USE_MOCKS) return delay(mockPasPage(params))
+    return fetchJson<BackendPasPage>('/pas', params as Record<string, string | number | undefined>).then((p) => ({
+      rows: p.items,
+      nextCursor: p.next_cursor,
+      total: p.total,
+    }))
+  },
+
+  listCells(params: BrowseParams): Promise<CellsBrowsePage> {
+    if (USE_MOCKS) return delay(mockCellsPage(params))
+    return fetchJson<BackendCellsPage>('/cells', params as Record<string, string | number | undefined>).then((p) => ({
+      rows: p.items,
+      nextCursor: p.next_cursor,
+      total: p.total,
+    }))
+  },
+
+  // -------------------------------------------------------------------------
+  // Sources: the dashboard's multi-directory SOURCES manager. Every PeakATail
+  // run output lives in some directory somewhere -- registering a directory
+  // here walks it (existing indexer, arbitrary depth) and merges every run it
+  // finds into the one shared DuckDB store. See backend/src/peakatail_hub/
+  // api/sources.py for the exact semantics (idempotent by resolved path,
+  // 'empty'/'ok'/'error' scan status, delete cascades the runs it owns).
+  // -------------------------------------------------------------------------
+
+  getSources(): Promise<Source[]> {
+    if (USE_MOCKS) return delay(mockSourcesState.map((s) => ({ ...s })))
+    return fetchJson('/sources')
+  },
+
+  addSource(path: string, label?: string): Promise<SourceScanResult> {
+    if (USE_MOCKS) {
+      const trimmed = path.trim()
+      if (!trimmed) return Promise.reject(new Error('path must not be empty'))
+      const existing = mockSourcesState.find((s) => s.path === trimmed)
+      if (existing) return delay(mockScanSource(existing))
+      mockSourceCounter += 1
+      const source: Source = {
+        source_id: `src_mock_new_${mockSourceCounter}`,
+        path: trimmed,
+        label: label ?? null,
+        added_at: new Date().toISOString(),
+        last_scanned_at: null,
+        last_scan_status: null,
+        last_scan_error: null,
+        run_count: 0,
+      }
+      mockSourcesState = [...mockSourcesState, source]
+      return delay(mockScanSource(source))
+    }
+    return sendJson('POST', '/sources', { path, label })
+  },
+
+  deleteSource(sourceId: string): Promise<void> {
+    if (USE_MOCKS) {
+      const before = mockSourcesState.length
+      mockSourcesState = mockSourcesState.filter((s) => s.source_id !== sourceId)
+      if (mockSourcesState.length === before) return Promise.reject(new Error(`source_id=${sourceId} not registered`))
+      return delay(undefined)
+    }
+    return sendJson('DELETE', `/sources/${sourceId}`)
+  },
+
+  rescanSource(sourceId: string): Promise<SourceScanResult> {
+    if (USE_MOCKS) {
+      const source = mockSourcesState.find((s) => s.source_id === sourceId)
+      if (!source) return Promise.reject(new Error(`source_id=${sourceId} not registered`))
+      return delay(mockScanSource(source))
+    }
+    return sendJson('POST', `/sources/${sourceId}/rescan`)
+  },
+
+  rescanAllSources(): Promise<SourceScanResult[]> {
+    if (USE_MOCKS) return delay(mockSourcesState.map((s) => mockScanSource(s)))
+    return sendJson<{ sources: SourceScanResult[] }>('POST', '/sources/rescan-all').then((r) => r.sources)
   },
 }

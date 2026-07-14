@@ -34,12 +34,24 @@ export function ErrorState({ error, onRetry }: { error: unknown; onRetry?: () =>
  * filters (loosen facets to see results). `reason="not-indexed"` = the
  * underlying artifact/run hasn't been indexed yet -- a materially different
  * situation that must never be presented the same way as "no results".
+ *
+ * FIX: `detail` was silently dropped for `reason="no-match"` (only the
+ * `not-indexed` branch ever read it) -- every "no-match" call site that
+ * passed a specific `detail` (GeneView's "No gene selected.", CompareView's
+ * "Pin genes/PAS/cells...", QcView's/UmapView's "Select a run...", AuditView's
+ * "Enter a PAS UID...") silently fell back to the generic filters message
+ * instead. Most visible on the reframed app's landing route ("/" -> GeneView
+ * with no geneId yet), which showed a findings-table-flavored "No rows match
+ * the current filters" instead of "No gene selected." Falls back to the
+ * original generic text when `detail` is omitted (e.g. BrowseTable/
+ * FindingsView's bare `<EmptyState reason="no-match" />`), so this is a
+ * behavior-preserving fix for every caller that never passed `detail` here.
  */
 export function EmptyState({ reason, detail }: { reason: 'no-match' | 'not-indexed'; detail?: string }) {
   return (
     <div className="view-state view-state--empty" data-reason={reason}>
       {reason === 'no-match' ? (
-        <p>No rows match the current filters. Try loosening facets or the q-threshold.</p>
+        <p>{detail ?? 'No rows match the current filters. Try loosening facets or the q-threshold.'}</p>
       ) : (
         <p>This run/dataset has not been indexed yet. {detail ?? 'Run the hub indexer against the run directory first.'}</p>
       )}

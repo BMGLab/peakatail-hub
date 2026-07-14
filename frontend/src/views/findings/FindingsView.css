@@ -73,7 +73,12 @@
 }
 
 .findings-view__table {
-  width: 100%;
+  /* Columns now have real (unequal) pixel widths (see th/td rule below) --
+     let the table grow to its natural content width and scroll
+     horizontally in `.findings-view__scroll` rather than forcing every
+     column back into an equal, content-blind share of a 100%-wide table. */
+  width: max-content;
+  min-width: 100%;
   font-size: 12px;
 }
 
@@ -100,11 +105,22 @@
 
 .findings-view__table th,
 .findings-view__table td {
-  flex: 1 1 0;
+  /* Real per-column widths now come from each columnDef's `meta.width`,
+     applied inline as `flex: 0 0 <width>px` (see FindingsView.tsx) -- NOT a
+     uniform flex share (that was the bug: every column got an equal slice
+     of the row regardless of content, squeezing ids/enums down to
+     unreadable truncation). This is just the shared min-width/overflow
+     fallback for the one column with no meta (the checkbox select-col). */
   min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.findings-view__table th.num,
+.findings-view__table td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 .findings-view__table thead th {

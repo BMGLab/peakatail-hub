@@ -123,6 +123,47 @@ export interface RunSummary {
   n_findings: number | null
   n_length_rows: number | null
   indexed_at: string | null
+  /**
+   * Which registered SOURCES directory (dashboard multi-directory manager,
+   * GET/POST /sources) this run was last (re)discovered under. All three
+   * are `null` for a run indexed before the sources feature existed, or via
+   * the bare `hub index <dir>` CLI outside any registered source -- a
+   * legitimate "unattributed" state, not missing data.
+   */
+  source_id: string | null
+  source_path: string | null
+  source_label: string | null
+  /** Distinct non-null celltype values across this run's findings -- shown on the dashboard's run card. */
+  n_celltypes: number | null
+}
+
+/** Matches backend schemas.py `SourceSummary` (GET/POST /sources). One
+ * registered runs-root directory the dashboard's SOURCES panel manages. */
+export interface Source {
+  source_id: string
+  path: string
+  label: string | null
+  added_at: string
+  last_scanned_at: string | null
+  /** 'ok' = scanned, no failures. 'empty' = scanned, zero run_manifest.json found.
+   * 'error' = at least one run under this path failed indexing (see last_scan_error).
+   * null = registered but not yet scanned (should not normally happen -- add scans inline). */
+  last_scan_status: 'ok' | 'empty' | 'error' | null
+  last_scan_error: string | null
+  run_count: number
+}
+
+/** Matches backend schemas.py `SourceScanReport` -- the indexer outcome of one add/rescan pass. */
+export interface SourceScanReport {
+  indexed: string[]
+  skipped_unchanged: string[]
+  failed: Record<string, string>
+}
+
+/** Matches backend schemas.py `SourceScanResponse` -- POST /sources and POST /sources/{id}/rescan's response shape. */
+export interface SourceScanResult {
+  source: Source
+  scan: SourceScanReport
 }
 
 /** Matches backend schemas.py `QcStageStat` (`/runs/{id}/qc`'s per-stage drop counts). */
@@ -149,15 +190,57 @@ export interface RunQc {
   gate_note: string
 }
 
+// ---------------------------------------------------------------------------
+// Browse: GET /genes, /pas, /cells -- searchable, paginated entity lists
+// backing the gene/PAS/cell browsers. Same page-envelope shape as
+// `/findings` (`items`/`next_cursor`/`total`, backend schemas.py
+// `GenesPage`/`PasPage`/`CellsPage`).
+// ---------------------------------------------------------------------------
+
+/** One row of `GET /genes` (backend schemas.py `GeneListRow`) -- a lighter
+ * aggregate than `GeneSummary` (no `run_id`/`n_length_rows`), one row per
+ * gene with at least one surviving PAS. */
+export interface GeneListRow {
+  gene_id: string
+  chrom: string | null
+  start: number | null
+  end: number | null
+  strand: '+' | '-' | null
+  n_pas: number
+  n_findings: number
+}
+
+export interface GenesPage {
+  items: GeneListRow[]
+  next_cursor: string | null
+  total: number
+}
+
+/** Full ledger rows, survived + dropped alike -- a provenance browser, not
+ * a render feed (unlike `GeneviewPas`, which is windowed/survived-only). */
+export interface PasPage {
+  items: PasLedgerRow[]
+  next_cursor: string | null
+  total: number
+}
+
+export interface CellsPage {
+  items: CellLedgerRow[]
+  next_cursor: string | null
+  total: number
+}
+
 /**
  * Backend schemas.py `GeneSummary` nests coordinates under `span:
  * GeneSpan | null` (null when the gene has zero surviving PAS -- e.g. every
- * assigned PAS was dropped) and has no `gene_name` at all (the contract has
- * no Ensembl-id -> symbol mapping yet). `chrom`/`start`/`end`/`strand` here
- * are therefore nullable -- client.ts flattens `span` onto this shape and
- * falls back `gene_name` to `gene_id`; consumers MUST null-check before
- * rendering coordinates (GeneView does, via `MissingArtifactNotice`) rather
- * than assume a span always exists.
+ * assigned PAS was dropped). `chrom`/`start`/`end`/`strand` here are
+ * therefore nullable -- client.ts flattens `span` onto this shape; consumers
+ * MUST null-check before rendering coordinates (GeneView does, via
+ * `MissingArtifactNotice`) rather than assume a span always exists.
+ * `gene_name` is now backend-sourced (GTF `gene_name` attribute via
+ * `peakatail_hub.gtf`, see genes.py) -- `client.ts` falls back to `gene_id`
+ * only when the backend's `gene_name` comes back empty (no GTF configured
+ * for the run / gene not found in it), never unconditionally overwrites it.
  */
 export interface GeneSummary {
   gene_id: string
@@ -213,6 +296,41 @@ export interface CellDetail extends CellLedgerRow {
   celltype: string | null
 }
 
+/**
+ * One transcript's exon structure for the isoform track (backend schemas.py
+ * `GeneviewIsoform`, sourced from a GTF via `peakatail_hub.gtf`). `exons` are
+ * `[start, end)` BED-style pairs in ascending genomic order (independent of
+ * strand — strand only controls the arrow direction drawn on the intron
+ * backbone, never the storage order of the exon list).
+ */
+export interface GeneviewIsoform {
+  transcript_id: string
+  exons: [number, number][]
+}
+
+/** One PAS's usage within one cluster (backend schemas.py `GeneviewClusterValue`).
+ * `proportion` is `null` when the gene had zero reads in this cluster at all
+ * (never coerced to 0 — a true zero-usage PAS and "gene not expressed here"
+ * are different facts, matching the matplotlib reference's NaN-vs-0 split). */
+export interface GeneviewClusterValue {
+  pas_uid: string
+  reads_per_cell: number
+  proportion: number | null
+}
+
+/**
+ * Per-cluster PAS-usage track (backend schemas.py `GeneviewClusterTrack`) --
+ * the data behind each "cluster N (n=…)" mini bar chart in the geneview,
+ * mirroring PeakATail's own `gene_track_matplotlib.py` renderer. `values` is
+ * POSITIONALLY aligned with `GeneviewLayerData.pas` (same order, same
+ * length) so layers can zip them by index without a pas_uid lookup.
+ */
+export interface GeneviewClusterTrack {
+  cluster: string
+  n_cells: number
+  values: GeneviewClusterValue[]
+}
+
 export interface GeneviewLayerData {
   gene: GeneSummary
   window: { chrom: string | null; start: number | null; end: number | null }
@@ -222,6 +340,10 @@ export interface GeneviewLayerData {
   coverage: null // roadmap B — coverage lane hidden in v1
   /** Data-availability flags from backend schemas.py GeneviewData.gates (spec §5: fail loud, not blank). */
   gates: string[]
+  /** Isoform/exon structure for the always-on gene-model track; empty when no GTF was configured for this run. */
+  isoforms: GeneviewIsoform[]
+  /** Per-cluster PAS-usage proportion tracks (the figure's viridis bar rows); empty when clusters.h5ad was unreadable. */
+  clusterTracks: GeneviewClusterTrack[]
 }
 
 export interface UmapPoint {
@@ -270,14 +392,33 @@ export interface SearchResult {
   sublabel: string | null
 }
 
+/**
+ * A `GeneviewPas` enriched at click-time with everything else the geneview
+ * canvas already had in hand for that PAS (design brief: "click → emit a
+ * selection event with full PAS metadata (pas_uid, coords, gene, per-cluster
+ * proportion, per-strategy diff q/Δ + length direction)"). Extends
+ * `GeneviewPas` rather than replacing it, so every existing consumer that
+ * only knows about `GeneviewPas` (DetailPanel's `isFullPasDetail` narrowing,
+ * etc.) keeps working unchanged; the extra fields are additive and optional.
+ */
+export interface GeneviewPasSelection extends GeneviewPas {
+  /** Within-gene usage proportion for this PAS, keyed by cluster label (from `GeneviewClusterTrack`). */
+  cluster_proportions?: Record<string, number | null>
+  /** Per-strategy switch-diff summary for this PAS, from whatever `findings` were loaded in the current geneview window. */
+  diff_summary?: { strategy: FindingRow['strategy']; qvalue: number; delta_proportion: number; direction: FindingRow['direction'] }[]
+  /** Per-strategy switch-length direction for this PAS's gene (see `LengthRow.direction` docstring re: per-PAS vs per-gene grain). */
+  length_summary?: { strategy: LengthRow['strategy']; direction: LengthRow['direction'] }[]
+}
+
 /** Union type for the shared DetailPanel's polymorphic selection.
- * `pas` accepts `GeneviewPas` too -- clicking a stem in the geneview canvas
- * only has the windowed geneview-data shape on hand, not a full
- * PasDetail/provenance fetch; DetailPanel renders the fields it has and
- * falls back gracefully (`—`) for the ones only a full PasDetail carries. */
+ * `pas` accepts `GeneviewPas`/`GeneviewPasSelection` too -- clicking a stem
+ * or bar in the geneview canvas only has the windowed geneview-data shape on
+ * hand, not a full PasDetail/provenance fetch; DetailPanel renders the
+ * fields it has and falls back gracefully (`—`) for the ones only a full
+ * PasDetail carries. */
 export type SelectedEntity =
   | { kind: 'gene'; data: GeneSummary }
-  | { kind: 'pas'; data: PasDetail | GeneviewPas }
+  | { kind: 'pas'; data: PasDetail | GeneviewPas | GeneviewPasSelection }
   | { kind: 'cell'; data: CellDetail }
 
 /** A pinned entity in the pin tray (subset of SelectedEntity, tagged for display). */

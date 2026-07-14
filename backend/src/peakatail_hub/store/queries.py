@@ -52,15 +52,40 @@ def decode_cursor(cursor: str | None) -> int:
 # --------------------------------------------------------------------------
 
 
+_RUN_SUMMARY_COLUMNS = [
+    "run_id", "root", "contract_version", "manifest_checksum",
+    "resolved_config", "stratum_to_label",
+    "n_pas", "n_cells", "n_genes", "n_datasets", "n_findings", "n_length_rows",
+    "indexed_at", "source_id", "source_path", "source_label", "n_celltypes",
+]
+
+
 def list_runs(con: duckdb.DuckDBPyConnection) -> list[dict[str, Any]]:
-    cols = [
-        "run_id", "root", "contract_version", "manifest_checksum",
-        "resolved_config", "stratum_to_label",
-        "n_pas", "n_cells", "n_genes", "n_datasets", "n_findings", "n_length_rows",
-        "indexed_at",
-    ]
-    rows = con.execute(f"SELECT {_select_list(cols)} FROM runs ORDER BY run_id").fetchall()  # noqa: S608
-    return [dict(zip(cols, row, strict=True)) for row in rows]
+    """Every indexed run, aggregated across ALL registered `sources` (a run
+    indexed before the sources feature existed, or via the bare `hub index`
+    CLI outside any registered source, has `source_id`/`source_path`/
+    `source_label` = NULL -- that's a legitimate state, not an error).
+    `n_celltypes` is a cheap correlated subquery (distinct non-null celltype
+    values in findings_long for that run) -- the dashboard's per-run cards
+    want it and there's no other aggregate endpoint that already carries it.
+    """
+    sql = """
+        SELECT
+            r.run_id, r.root, r.contract_version, r.manifest_checksum,
+            r.resolved_config, r.stratum_to_label,
+            r.n_pas, r.n_cells, r.n_genes, r.n_datasets, r.n_findings, r.n_length_rows,
+            r.indexed_at, r.source_id, s.path AS source_path, s.label AS source_label,
+            (
+                SELECT count(DISTINCT f.celltype)
+                FROM findings_long f
+                WHERE f.run_id = r.run_id AND f.celltype IS NOT NULL AND f.celltype != ''
+            ) AS n_celltypes
+        FROM runs r
+        LEFT JOIN sources s ON r.source_id = s.source_id
+        ORDER BY r.run_id
+    """
+    rows = con.execute(sql).fetchall()
+    return [dict(zip(_RUN_SUMMARY_COLUMNS, row, strict=True)) for row in rows]
 
 
 def get_run(con: duckdb.DuckDBPyConnection, run_id: str) -> dict[str, Any] | None:
@@ -246,6 +271,92 @@ def geneview_length_for_gene(
     return [dict(zip(cols, row, strict=True)) for row in rows]
 
 
+def count_genes(
+    con: duckdb.DuckDBPyConnection,
+    run_id: str,
+    q: str | None = None,
+    chrom: str | None = None,
+    start: int | None = None,
+    end: int | None = None,
+) -> int:
+    clauses = ["run_id = ?", "dropped_at = ''", "gene_id != ''"]
+    params: list[Any] = [run_id]
+    if q:
+        clauses.append("gene_id ILIKE ?")
+        params.append(f"%{q}%")
+    if chrom is not None:
+        clauses.append("chrom = ?")
+        params.append(chrom)
+    if start is not None:
+        clauses.append('"end" >= ?')
+        params.append(start)
+    if end is not None:
+        clauses.append("start <= ?")
+        params.append(end)
+    sql = f"SELECT count(DISTINCT gene_id) FROM pas_ledger WHERE {' AND '.join(clauses)}"  # noqa: S608
+    return con.execute(sql, params).fetchone()[0]
+
+
+def list_genes(
+    con: duckdb.DuckDBPyConnection,
+    run_id: str,
+    q: str | None = None,
+    chrom: str | None = None,
+    start: int | None = None,
+    end: int | None = None,
+    offset: int = 0,
+    limit: int = 50,
+) -> list[dict[str, Any]]:
+    """Browse listing: one row per gene, aggregated from surviving PAS in
+    `pas_ledger` (never `findings_long`, which has no coordinate columns --
+    same rationale as `gene_pas_span`). `chrom`/`start`/`end` (all optional,
+    all-or-nothing not required) do a locus-overlap filter so the TopBar's
+    "jump to chr:coords" search can resolve a raw genomic interval to the
+    gene(s) it falls inside, the same way it resolves a symbol/ENSG id.
+    """
+    clauses = ["run_id = ?", "dropped_at = ''", "gene_id != ''"]
+    params: list[Any] = [run_id]
+    if q:
+        clauses.append("gene_id ILIKE ?")
+        params.append(f"%{q}%")
+    if chrom is not None:
+        clauses.append("chrom = ?")
+        params.append(chrom)
+    if start is not None:
+        clauses.append('"end" >= ?')
+        params.append(start)
+    if end is not None:
+        clauses.append("start <= ?")
+        params.append(end)
+    where = " AND ".join(clauses)
+    sql = (
+        "SELECT gene_id, any_value(chrom) AS chrom, min(start) AS start, "  # noqa: S608
+        'max("end") AS "end", any_value(strand) AS strand, count(*) AS n_pas '
+        f"FROM pas_ledger WHERE {where} "
+        "GROUP BY gene_id ORDER BY gene_id LIMIT ? OFFSET ?"
+    )
+    rows = con.execute(sql, [*params, limit, offset]).fetchall()
+    cols = ["gene_id", "chrom", "start", "end", "strand", "n_pas"]
+    genes = [dict(zip(cols, row, strict=True)) for row in rows]
+    if not genes:
+        return genes
+    # n_findings per gene, one extra query scoped to just this page's gene_ids
+    # (mirrors the geneview_findings_for_pas page-scoped join pattern above)
+    # rather than a per-row correlated subquery.
+    gene_ids = [g["gene_id"] for g in genes]
+    placeholders = ", ".join("?" for _ in gene_ids)
+    finding_counts = dict(
+        con.execute(
+            f"SELECT gene_id, count(*) FROM findings_long WHERE run_id = ? AND gene_id IN ({placeholders}) "  # noqa: S608
+            "GROUP BY gene_id",
+            [run_id, *gene_ids],
+        ).fetchall()
+    )
+    for g in genes:
+        g["n_findings"] = finding_counts.get(g["gene_id"], 0)
+    return genes
+
+
 def gene_summary(con: duckdb.DuckDBPyConnection, run_id: str, gene_id: str) -> dict[str, Any]:
     n_pas = con.execute(
         "SELECT count(*) FROM pas_ledger WHERE run_id = ? AND gene_id = ? AND dropped_at = ''", [run_id, gene_id]
@@ -286,6 +397,38 @@ def get_pas(con: duckdb.DuckDBPyConnection, pas_uid: str) -> dict[str, Any] | No
     sql = f"SELECT {_select_list(PAS_COLUMNS)} FROM pas_ledger WHERE pas_uid = ?"  # noqa: S608
     row = con.execute(sql, [pas_uid]).fetchone()
     return dict(zip(PAS_COLUMNS, row, strict=True)) if row else None
+
+
+def _pas_list_where(run_id: str, q: str | None) -> tuple[str, list[Any]]:
+    clauses = ["run_id = ?"]
+    params: list[Any] = [run_id]
+    if q:
+        clauses.append("(pas_uid ILIKE ? OR gene_id ILIKE ? OR unified_pas_id ILIKE ?)")
+        like = f"%{q}%"
+        params.extend([like, like, like])
+    return " AND ".join(clauses), params
+
+
+def count_pas(con: duckdb.DuckDBPyConnection, run_id: str, q: str | None = None) -> int:
+    where_sql, params = _pas_list_where(run_id, q)
+    return con.execute(f"SELECT count(*) FROM pas_ledger WHERE {where_sql}", params).fetchone()[0]  # noqa: S608
+
+
+def list_pas(
+    con: duckdb.DuckDBPyConnection, run_id: str, q: str | None = None, offset: int = 0, limit: int = 50
+) -> list[dict[str, Any]]:
+    """Browse listing over the full PAS ledger (survived + dropped alike --
+    unlike `geneview_pas_in_window`, this is a provenance browser, not a
+    render feed, so dropped rows stay visible with their `dropped_at`/
+    `drop_reason` rather than being filtered out).
+    """
+    where_sql, params = _pas_list_where(run_id, q)
+    sql = (
+        f"SELECT {_select_list(PAS_COLUMNS)} FROM pas_ledger "  # noqa: S608
+        f"WHERE {where_sql} ORDER BY pas_uid LIMIT ? OFFSET ?"
+    )
+    rows = con.execute(sql, [*params, limit, offset]).fetchall()
+    return [dict(zip(PAS_COLUMNS, row, strict=True)) for row in rows]
 
 
 def pas_provenance(con: duckdb.DuckDBPyConnection, pas_uid: str) -> dict[str, Any] | None:
@@ -331,6 +474,35 @@ def get_cell(con: duckdb.DuckDBPyConnection, cell_uid: str) -> dict[str, Any] | 
     sql = f"SELECT {_select_list(CELL_COLUMNS)} FROM cell_ledger WHERE cell_uid = ?"  # noqa: S608
     row = con.execute(sql, [cell_uid]).fetchone()
     return dict(zip(CELL_COLUMNS, row, strict=True)) if row else None
+
+
+def _cell_list_where(run_id: str, q: str | None) -> tuple[str, list[Any]]:
+    clauses = ["run_id = ?"]
+    params: list[Any] = [run_id]
+    if q:
+        clauses.append("(barcode ILIKE ? OR cell_uid ILIKE ? OR cluster ILIKE ?)")
+        like = f"%{q}%"
+        params.extend([like, like, like])
+    return " AND ".join(clauses), params
+
+
+def count_cells(con: duckdb.DuckDBPyConnection, run_id: str, q: str | None = None) -> int:
+    where_sql, params = _cell_list_where(run_id, q)
+    return con.execute(f"SELECT count(*) FROM cell_ledger WHERE {where_sql}", params).fetchone()[0]  # noqa: S608
+
+
+def list_cells(
+    con: duckdb.DuckDBPyConnection, run_id: str, q: str | None = None, offset: int = 0, limit: int = 50
+) -> list[dict[str, Any]]:
+    """Browse listing over the full cell ledger (survived + dropped alike,
+    same rationale as `list_pas`)."""
+    where_sql, params = _cell_list_where(run_id, q)
+    sql = (
+        f"SELECT {_select_list(CELL_COLUMNS)} FROM cell_ledger "  # noqa: S608
+        f"WHERE {where_sql} ORDER BY cell_uid LIMIT ? OFFSET ?"
+    )
+    rows = con.execute(sql, [*params, limit, offset]).fetchall()
+    return [dict(zip(CELL_COLUMNS, row, strict=True)) for row in rows]
 
 
 def cell_provenance(con: duckdb.DuckDBPyConnection, cell_uid: str) -> dict[str, Any] | None:
@@ -481,3 +653,85 @@ def benchmarks_stub(run_id: str) -> dict[str, Any]:
         "available": False,
         "note": "No benchmark artifact schema exists in peakatail-contract yet; nothing to read.",
     }
+
+
+# --------------------------------------------------------------------------
+# sources (multi-directory SOURCES manager -- dashboard feature)
+# --------------------------------------------------------------------------
+
+SOURCE_COLUMNS = ["source_id", "path", "label", "added_at", "last_scanned_at", "last_scan_status", "last_scan_error"]
+
+
+def list_sources(con: duckdb.DuckDBPyConnection) -> list[dict[str, Any]]:
+    """Every registered source, with a live per-source run count (a
+    correlated subquery against `runs.source_id`, not a stored counter --
+    always in sync with whatever `index_source` last wrote, including runs
+    that moved to a different source on rescan).
+    """
+    sql = f"""
+        SELECT {_select_list(SOURCE_COLUMNS)},
+            (SELECT count(*) FROM runs r WHERE r.source_id = sources.source_id) AS run_count
+        FROM sources
+        ORDER BY added_at
+    """  # noqa: S608
+    rows = con.execute(sql).fetchall()
+    cols = [*SOURCE_COLUMNS, "run_count"]
+    return [dict(zip(cols, row, strict=True)) for row in rows]
+
+
+def get_source(con: duckdb.DuckDBPyConnection, source_id: str) -> dict[str, Any] | None:
+    matches = [s for s in list_sources(con) if s["source_id"] == source_id]
+    return matches[0] if matches else None
+
+
+def get_source_by_path(con: duckdb.DuckDBPyConnection, path: str) -> dict[str, Any] | None:
+    row = con.execute(f"SELECT {_select_list(SOURCE_COLUMNS)} FROM sources WHERE path = ?", [path]).fetchone()  # noqa: S608
+    return dict(zip(SOURCE_COLUMNS, row, strict=True)) if row else None
+
+
+def insert_source(con: duckdb.DuckDBPyConnection, source_id: str, path: str, label: str | None) -> None:
+    con.execute(
+        "INSERT INTO sources (source_id, path, label, added_at, last_scanned_at, last_scan_status, last_scan_error) "
+        "VALUES (?, ?, ?, now(), NULL, NULL, NULL)",
+        [source_id, path, label],
+    )
+
+
+def update_source_scan_result(
+    con: duckdb.DuckDBPyConnection, source_id: str, status: str, error: str | None
+) -> None:
+    con.execute(
+        "UPDATE sources SET last_scanned_at = now(), last_scan_status = ?, last_scan_error = ? WHERE source_id = ?",
+        [status, error, source_id],
+    )
+
+
+def touch_run_source(con: duckdb.DuckDBPyConnection, run_id: str, source_id: str) -> None:
+    """Re-point an already-indexed (unchanged, so not re-inserted) run at
+    the source that just (re)discovered it. See index/indexer.py::index_source.
+    """
+    con.execute("UPDATE runs SET source_id = ? WHERE run_id = ?", [source_id, run_id])
+
+
+_CHILD_TABLES = ("pas_ledger", "cell_ledger", "findings_long", "length_long", "umap_points")
+
+
+def delete_source_cascade(con: duckdb.DuckDBPyConnection, source_id: str) -> list[str]:
+    """Remove a registered source AND every run it owns (runs.source_id =
+    source_id), including their ledger/findings/length/umap rows -- a run
+    that's no longer discoverable under any registered directory shouldn't
+    keep cluttering the dashboard as an orphan pointing at a deleted source.
+    Returns the list of removed run_ids.
+    """
+    run_ids = [r[0] for r in con.execute("SELECT run_id FROM runs WHERE source_id = ?", [source_id]).fetchall()]
+    con.execute("BEGIN TRANSACTION")
+    try:
+        for run_id in run_ids:
+            for table in ("runs", *_CHILD_TABLES):
+                con.execute(f"DELETE FROM {table} WHERE run_id = ?", [run_id])  # noqa: S608 -- fixed whitelist above
+        con.execute("DELETE FROM sources WHERE source_id = ?", [source_id])
+        con.execute("COMMIT")
+    except Exception:
+        con.execute("ROLLBACK")
+        raise
+    return run_ids

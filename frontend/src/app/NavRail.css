@@ -34,3 +34,12 @@
   border-left-color: var(--accent);
   background: var(--accent-dim);
 }
+
+/* Visual grouping: Browser | Genes/PAS/Cells | UMAP/QC/Audit/Compare --
+   matches routes.tsx's ordering (browser-first, then the entity browsers,
+   then secondary analysis views). */
+.nav-rail__group-end {
+  margin-bottom: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}

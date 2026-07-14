@@ -2,8 +2,8 @@
 // never `api` directly, so query-key/caching/staleness policy lives in one
 // place. Swapping mocks -> real backend happens inside client.ts; these hooks
 // don't change.
-import { useQuery } from '@tanstack/react-query'
-import { api, type FindingsParams } from './client'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { api, type BrowseParams, type FindingsParams, type GenesBrowseParams } from './client'
 
 export function useRuns() {
   return useQuery({ queryKey: ['runs'], queryFn: api.getRuns })
@@ -40,10 +40,15 @@ export function useFinding(id: string | null) {
   })
 }
 
-export function useGene(id: string | null) {
+// `runId` (from the TopBar Scope selector's `useScopeStore`) is threaded
+// through as its own param -- not folded into `params` below -- because
+// callers (GeneView) need it in the query key even when `params` itself is
+// omitted, so switching the active run always refetches rather than
+// serving a stale cached gene from the previously-scoped run.
+export function useGene(id: string | null, runId?: string | null) {
   return useQuery({
-    queryKey: ['gene', id],
-    queryFn: () => api.getGene(id!),
+    queryKey: ['gene', id, runId],
+    queryFn: () => api.getGene(id!, runId ?? undefined),
     enabled: id !== null,
   })
 }
@@ -51,10 +56,11 @@ export function useGene(id: string | null) {
 export function useGeneviewData(
   id: string | null,
   params?: { start?: number; end?: number; lod?: number; clusters?: string[]; diff_strategies?: string[]; length_strategies?: string[] },
+  runId?: string | null,
 ) {
   return useQuery({
-    queryKey: ['geneviewData', id, params],
-    queryFn: () => api.getGeneviewData(id!, params),
+    queryKey: ['geneviewData', id, params, runId],
+    queryFn: () => api.getGeneviewData(id!, { ...params, run_id: runId ?? undefined }),
     enabled: id !== null,
   })
 }
@@ -128,5 +134,92 @@ export function useSearch(q: string) {
     queryKey: ['search', q],
     queryFn: () => api.search(q),
     enabled: q.trim().length > 0,
+  })
+}
+
+// -----------------------------------------------------------------------
+// Browse: gene/PAS/cell browsers (views/browse/**). `placeholderData: prev`
+// keeps the previous page's rows on screen while a new search/page loads,
+// same UX as `useFindings` above -- avoids a full-table flash to a loading
+// state on every keystroke.
+// -----------------------------------------------------------------------
+
+export function useGenesBrowse(params: GenesBrowseParams) {
+  return useQuery({
+    queryKey: ['genesBrowse', params],
+    queryFn: () => api.listGenes(params),
+    placeholderData: (prev) => prev,
+  })
+}
+
+export function usePasBrowse(params: BrowseParams) {
+  return useQuery({
+    queryKey: ['pasBrowse', params],
+    queryFn: () => api.listPas(params),
+    placeholderData: (prev) => prev,
+  })
+}
+
+export function useCellsBrowse(params: BrowseParams) {
+  return useQuery({
+    queryKey: ['cellsBrowse', params],
+    queryFn: () => api.listCells(params),
+    placeholderData: (prev) => prev,
+  })
+}
+
+// -----------------------------------------------------------------------
+// Sources: the dashboard's multi-directory SOURCES manager. Every mutation
+// (add/rescan/delete) invalidates both ['sources'] and ['runs'] -- adding or
+// rescanning a source can change which runs exist/which source they're
+// attributed to, and the dashboard's run cards + overview totals read
+// ['runs'], not just the SOURCES panel itself.
+// -----------------------------------------------------------------------
+
+export function useSources() {
+  return useQuery({ queryKey: ['sources'], queryFn: api.getSources })
+}
+
+export function useAddSource() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ path, label }: { path: string; label?: string }) => api.addSource(path, label),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sources'] })
+      queryClient.invalidateQueries({ queryKey: ['runs'] })
+    },
+  })
+}
+
+export function useDeleteSource() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (sourceId: string) => api.deleteSource(sourceId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sources'] })
+      queryClient.invalidateQueries({ queryKey: ['runs'] })
+    },
+  })
+}
+
+export function useRescanSource() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (sourceId: string) => api.rescanSource(sourceId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sources'] })
+      queryClient.invalidateQueries({ queryKey: ['runs'] })
+    },
+  })
+}
+
+export function useRescanAllSources() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => api.rescanAllSources(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sources'] })
+      queryClient.invalidateQueries({ queryKey: ['runs'] })
+    },
   })
 }

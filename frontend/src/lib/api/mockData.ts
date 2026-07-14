@@ -3,14 +3,20 @@
 // functions below get real fetch bodies instead of these fixtures.
 import type {
   CellDetail,
+  CellLedgerRow,
   FindingRow,
+  GeneListRow,
   GeneSummary,
+  GeneviewClusterTrack,
+  GeneviewIsoform,
   GeneviewLayerData,
   LengthRow,
   PasDetail,
+  PasLedgerRow,
   RunQc,
   RunSummary,
   SearchResult,
+  Source,
   StubResponse,
   UmapPoint,
 } from '@lib/contract/types'
@@ -29,6 +35,10 @@ export const mockRuns: RunSummary[] = [
     n_findings: 340,
     n_length_rows: 5200,
     indexed_at: '2026-06-01T00:00:00Z',
+    source_id: 'src_mock_a',
+    source_path: '/mock/sources/cohort_a',
+    source_label: 'Cohort A (mock)',
+    n_celltypes: 4,
   },
   {
     run_id: 'run-laughney-2024-01-subset',
@@ -43,6 +53,38 @@ export const mockRuns: RunSummary[] = [
     n_findings: 88,
     n_length_rows: 1400,
     indexed_at: '2026-05-15T00:00:00Z',
+    source_id: 'src_mock_b',
+    source_path: '/mock/sources/cohort_b_subset',
+    source_label: 'Cohort B subset (mock)',
+    n_celltypes: 3,
+  },
+]
+
+// Seed data for the dashboard's SOURCES panel in mock mode. Loosely mirrors
+// mockRuns' source_id/source_path pairing above -- dev-only demo data, not a
+// live filesystem (see client.ts's addSource/rescanSource/deleteSource mock
+// branches, which mutate a clone of this array rather than actually walking
+// a directory).
+export const mockSources: Source[] = [
+  {
+    source_id: 'src_mock_a',
+    path: '/mock/sources/cohort_a',
+    label: 'Cohort A (mock)',
+    added_at: '2026-06-01T00:00:00Z',
+    last_scanned_at: '2026-06-01T00:05:00Z',
+    last_scan_status: 'ok',
+    last_scan_error: null,
+    run_count: 1,
+  },
+  {
+    source_id: 'src_mock_b',
+    path: '/mock/sources/cohort_b_subset',
+    label: 'Cohort B subset (mock)',
+    added_at: '2026-05-15T00:00:00Z',
+    last_scanned_at: '2026-05-15T00:02:00Z',
+    last_scan_status: 'ok',
+    last_scan_error: null,
+    run_count: 1,
   },
 ]
 
@@ -135,6 +177,50 @@ export function mockPasForGene(geneId: string): PasDetail[] {
   }))
 }
 
+/**
+ * Synthesize a plausible isoform/exon structure from a gene's own PAS
+ * positions: two upstream exons of fixed width, then one terminal exon per
+ * isoform whose 3' end lands progressively further out (mirroring a
+ * tandem-3'UTR gene like the PeakATail CLIC2 reference figure, where each
+ * shorter isoform's terminal exon ends at a nearer PAS). Mock-only data --
+ * the real endpoint sources this from a GTF via `peakatail_hub.gtf`.
+ */
+function mockIsoformsForGene(gene: GeneSummary, pas: PasDetail[]): GeneviewIsoform[] {
+  if (gene.start === null || gene.end === null || pas.length === 0) return []
+  const ascending = [...pas].sort((a, b) => a.end - b.end)
+  const spanStart = gene.start
+  const upstream1: [number, number] = [spanStart, spanStart + 60]
+  const upstream2: [number, number] = [spanStart + 140, spanStart + 220]
+  // One isoform per distinct terminal PAS, shortest-3'UTR first, so the
+  // isoform track shows the same "each isoform ends at a different PAS"
+  // story as the reference figure.
+  return ascending.map((p, i) => ({
+    transcript_id: `${gene.gene_id.replace('ENSG', 'ENST')}${(i + 1).toString().padStart(2, '0')}`,
+    exons: [upstream1, upstream2, [Math.max(upstream2[1] + 40, p.start - 20), p.end]] as [number, number][],
+  }))
+}
+
+/** Derive per-cluster proportion tracks from the same `per_cluster_counts`
+ * already used for PAS stems, so mock mode exercises the exact renderer
+ * shape the real backend's `cluster_tracks` field carries (see
+ * schemas.py GeneviewClusterTrack) without a second parallel fixture. */
+function mockClusterTracks(pas: PasDetail[]): GeneviewClusterTrack[] {
+  if (pas.length === 0) return []
+  return clusters.map((cluster) => {
+    const reads = pas.map((p) => p.per_cluster_counts[cluster] ?? 0)
+    const total = reads.reduce((a, b) => a + b, 0)
+    return {
+      cluster,
+      n_cells: 20 + clusters.indexOf(cluster) * 7,
+      values: pas.map((p, i) => ({
+        pas_uid: p.pas_uid,
+        reads_per_cell: reads[i]! / 10,
+        proportion: total > 0 ? reads[i]! / total : null,
+      })),
+    }
+  })
+}
+
 export function mockGeneviewData(geneId: string): GeneviewLayerData | null {
   const gene = genes.find((g) => g.gene_id === geneId)
   if (!gene) return null
@@ -147,6 +233,8 @@ export function mockGeneviewData(geneId: string): GeneviewLayerData | null {
     length: mockLengths.filter((l) => l.gene_id === geneId),
     coverage: null,
     gates: [],
+    isoforms: mockIsoformsForGene(gene, pas),
+    clusterTracks: mockClusterTracks(pas),
   }
 }
 
@@ -221,6 +309,86 @@ export const mockBenchmarks: Record<string, StubResponse> = {
     available: false,
     note: 'No benchmark artifact schema exists in peakatail-contract yet; nothing to read.',
   },
+}
+
+// ---------------------------------------------------------------------------
+// Browse: mock-mode GET /genes, /pas, /cells (searchable, paginated lists)
+// ---------------------------------------------------------------------------
+
+interface MockPage<T> {
+  rows: T[]
+  nextCursor: string | null
+  total: number
+}
+
+function paginate<T>(rows: T[], cursor: string | undefined, limit: number): MockPage<T> {
+  const offset = cursor ? Number(cursor) : 0
+  const total = rows.length
+  const page = rows.slice(offset, offset + limit)
+  const nextOffset = offset + limit
+  const nextCursor = nextOffset < total ? String(nextOffset) : null
+  return { rows: page, nextCursor, total }
+}
+
+const mockGeneListRows: GeneListRow[] = genes.map((g) => ({
+  gene_id: g.gene_id,
+  chrom: g.chrom,
+  start: g.start,
+  end: g.end,
+  strand: g.strand,
+  n_pas: g.n_pas,
+  n_findings: mockFindings.filter((f) => f.gene_id === g.gene_id).length,
+}))
+
+const mockAllPas: PasLedgerRow[] = genes.flatMap((g) => mockPasForGene(g.gene_id))
+
+export interface MockGenesBrowseParams {
+  q?: string
+  chrom?: string
+  start?: number
+  end?: number
+  cursor?: string
+  limit?: number
+}
+
+export function mockGenesPage(params: MockGenesBrowseParams): MockPage<GeneListRow> {
+  let rows = mockGeneListRows
+  if (params.q) {
+    const q = params.q.toLowerCase()
+    rows = rows.filter((g) => g.gene_id.toLowerCase().includes(q))
+  }
+  if (params.chrom) rows = rows.filter((g) => g.chrom === params.chrom)
+  if (params.start !== undefined) rows = rows.filter((g) => g.end !== null && g.end >= params.start!)
+  if (params.end !== undefined) rows = rows.filter((g) => g.start !== null && g.start <= params.end!)
+  return paginate(rows, params.cursor, params.limit ?? 50)
+}
+
+export interface MockBrowseParams {
+  q?: string
+  cursor?: string
+  limit?: number
+}
+
+export function mockPasPage(params: MockBrowseParams): MockPage<PasLedgerRow> {
+  let rows = mockAllPas
+  if (params.q) {
+    const q = params.q.toLowerCase()
+    rows = rows.filter(
+      (p) => p.pas_uid.toLowerCase().includes(q) || (p.gene_id ?? '').toLowerCase().includes(q) || p.unified_pas_id.toLowerCase().includes(q),
+    )
+  }
+  return paginate(rows, params.cursor, params.limit ?? 50)
+}
+
+export function mockCellsPage(params: MockBrowseParams): MockPage<CellLedgerRow> {
+  let rows: CellLedgerRow[] = mockCells
+  if (params.q) {
+    const q = params.q.toLowerCase()
+    rows = rows.filter(
+      (c) => c.barcode.toLowerCase().includes(q) || c.cell_uid.toLowerCase().includes(q) || (c.cluster ?? '').toLowerCase().includes(q),
+    )
+  }
+  return paginate(rows, params.cursor, params.limit ?? 50)
 }
 
 export function mockSearch(q: string): SearchResult[] {
