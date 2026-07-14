@@ -9,7 +9,8 @@ from pathlib import Path
 import duckdb
 import pandas as pd
 
-from peakatail_hub.index import find_run_dirs, index_run, index_runs_root
+from peakatail_hub.index import find_run_dirs, index_run, index_runs_root, index_source
+from peakatail_hub.store import queries
 from peakatail_hub.store.db import connect
 from tests.conftest import CONTRACT_FIXTURES_DIR
 
@@ -219,5 +220,66 @@ def test_invalid_run_is_skipped_not_fatal(db_path: Path, tmp_path: Path):
             "SELECT count(*) FROM findings_long WHERE run_id = 'bad-run-0001'"
         ).fetchone()[0]
         assert n_bad == 0
+    finally:
+        con.close()
+
+
+def test_index_source_tags_fresh_runs_with_source_id(db_path: Path, tmp_path: Path):
+    """`index_source` is `index_runs_root` plus source attribution (sources
+    dashboard feature, api/sources.py) -- a run that's genuinely new gets
+    fully indexed AND its `runs.source_id` set in the same pass.
+    """
+    run_copy = tmp_path / "run_copy"
+    shutil.copytree(CONTRACT_FIXTURES_DIR, run_copy)
+    manifest_path = run_copy / "run_manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["run_id"] = "src-tagged-run"
+    manifest_path.write_text(json.dumps(manifest))
+
+    con = connect(db_path, read_only=False)
+    try:
+        # sources row must exist first (FK-less, but queries.touch_run_source /
+        # the runs.source_id column don't require it -- keeping this
+        # realistic to how api/sources.py always inserts before scanning).
+        queries.insert_source(con, "src_test1", str(tmp_path), None)
+        report = index_source(con, "src_test1", tmp_path)
+        assert report.indexed == ["src-tagged-run"]
+        assert report.skipped_unchanged == []
+
+        source_id = con.execute(
+            "SELECT source_id FROM runs WHERE run_id = 'src-tagged-run'"
+        ).fetchone()[0]
+        assert source_id == "src_test1"
+    finally:
+        con.close()
+
+
+def test_index_source_reattributes_already_indexed_unchanged_run(db_path: Path):
+    """The core "collect from multiple directories" correctness requirement:
+    a run indexed once (e.g. via the bare `hub index` CLI, source_id NULL)
+    must still get correctly re-pointed at a NEWLY registered source that
+    (re)discovers it, even though the unchanged-manifest/artifacts fast path
+    means `index_run` itself never touches that row again. Without this,
+    adding a source over an already-indexed run directory would silently
+    leave the dashboard showing that run as belonging to no source (or the
+    wrong one).
+    """
+    con = connect(db_path, read_only=False)
+    try:
+        run_id = index_run(con, CONTRACT_FIXTURES_DIR)  # source_id NULL, like the bare CLI
+        assert con.execute("SELECT source_id FROM runs WHERE run_id = ?", [run_id]).fetchone()[0] is None
+
+        queries.insert_source(con, "src_test2", str(CONTRACT_FIXTURES_DIR.parent), "My Source")
+        report = index_source(con, "src_test2", CONTRACT_FIXTURES_DIR.parent)
+
+        assert report.indexed == []
+        assert report.skipped_unchanged == [run_id]
+        source_id = con.execute("SELECT source_id FROM runs WHERE run_id = ?", [run_id]).fetchone()[0]
+        assert source_id == "src_test2"
+
+        # Row counts for the heavy tables must be untouched (proves this
+        # really was the cheap UPDATE path, not a hidden full re-index).
+        n_pas = con.execute("SELECT count(*) FROM pas_ledger WHERE run_id = ?", [run_id]).fetchone()[0]
+        assert n_pas == 6
     finally:
         con.close()

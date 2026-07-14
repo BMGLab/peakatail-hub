@@ -26,6 +26,10 @@ def _to_run_summary(row: dict) -> RunSummary:
         n_findings=row["n_findings"],
         n_length_rows=row["n_length_rows"],
         indexed_at=str(row["indexed_at"]) if row["indexed_at"] is not None else None,
+        source_id=row.get("source_id"),
+        source_path=row.get("source_path"),
+        source_label=row.get("source_label"),
+        n_celltypes=row.get("n_celltypes"),
     )
 
 

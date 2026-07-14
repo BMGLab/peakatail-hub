@@ -46,7 +46,30 @@ CREATE TABLE IF NOT EXISTS runs (
     n_datasets            INTEGER,
     n_findings            INTEGER,
     n_length_rows         INTEGER,
+    -- Which registered `sources` row last (re)indexed this run_id, NULL for
+    -- runs indexed before the sources feature existed or via the bare
+    -- `hub index <dir>` CLI outside of any registered source. See
+    -- index/indexer.py::index_source -- a run already indexed elsewhere
+    -- (manifest+artifacts unchanged, so index_run() skips the heavy
+    -- re-index) still gets this column re-pointed at whichever source most
+    -- recently discovered it, via queries.touch_run_source.
+    source_id             VARCHAR,
     indexed_at            TIMESTAMP
+);
+
+-- Multi-directory SOURCES manager (dashboard feature): one row per
+-- registered runs-root directory. A DuckDB table rather than a sidecar JSON
+-- file -- it's already the hub's one persistence mechanism, gets the same
+-- transactional/idempotent guarantees as everything else here, and needs no
+-- new file-locking story alongside the existing single-writer DuckDB file.
+CREATE TABLE IF NOT EXISTS sources (
+    source_id         VARCHAR PRIMARY KEY,
+    path              VARCHAR UNIQUE,  -- resolved absolute path; add is idempotent per-path
+    label             VARCHAR,
+    added_at          TIMESTAMP,
+    last_scanned_at   TIMESTAMP,
+    last_scan_status  VARCHAR,  -- 'ok' | 'empty' | 'error' | NULL (never scanned)
+    last_scan_error   VARCHAR
 );
 
 CREATE TABLE IF NOT EXISTS pas_ledger (
@@ -138,8 +161,21 @@ CREATE INDEX IF NOT EXISTS idx_findings_gene ON findings_long(run_id, gene_id);
 CREATE INDEX IF NOT EXISTS idx_length_run ON length_long(run_id);
 CREATE INDEX IF NOT EXISTS idx_length_gene ON length_long(run_id, gene_id);
 CREATE INDEX IF NOT EXISTS idx_umap_run ON umap_points(run_id);
+CREATE INDEX IF NOT EXISTS idx_runs_source ON runs(source_id);
+"""
+
+# Migration for DuckDB files created before the sources feature existed:
+# `CREATE TABLE IF NOT EXISTS runs (...)` above is a no-op once the table
+# already exists, so a pre-existing `runs` table never gains the new
+# `source_id` column from the DDL string alone. `ADD COLUMN IF NOT EXISTS`
+# is itself idempotent, so re-running this on an already-migrated DB (or a
+# brand new one where the CREATE TABLE just added the column) is a safe
+# no-op either way.
+_MIGRATIONS = """
+ALTER TABLE runs ADD COLUMN IF NOT EXISTS source_id VARCHAR;
 """
 
 
 def apply_schema(con: duckdb.DuckDBPyConnection) -> None:
     con.execute(DDL)
+    con.execute(_MIGRATIONS)

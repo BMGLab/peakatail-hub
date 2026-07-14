@@ -291,10 +291,19 @@ def _insert_df(con: duckdb.DuckDBPyConnection, table: str, df: pd.DataFrame) -> 
         con.unregister("_tmp_df")
 
 
-def index_run(con: duckdb.DuckDBPyConnection, run_dir: Path) -> str:
+def index_run(con: duckdb.DuckDBPyConnection, run_dir: Path, source_id: str | None = None) -> str:
     """(Re)index one run directory. Returns the run_id. Raises on any
     validation or read failure -- callers (index_runs_root) are responsible
     for catching per-run so one bad run doesn't abort the whole pass.
+
+    `source_id`, when given, tags the `runs` row with which registered
+    `sources` entry (see api/sources.py) discovered this run. It has NO
+    effect on the idempotency gate above (manifest_checksum +
+    artifacts_fingerprint) -- an unchanged run still raises `_UnchangedRun`
+    even if it's being (re)discovered under a different/new source. Callers
+    that care about source attribution surviving that skip (index_source,
+    below) must handle `_UnchangedRun` themselves and re-point source_id via
+    `queries.touch_run_source`.
     """
     manifest_path = run_dir / "run_manifest.json"
     checksum = _manifest_checksum(manifest_path)
@@ -354,8 +363,8 @@ def index_run(con: duckdb.DuckDBPyConnection, run_dir: Path) -> str:
                 run_id, root, contract_version, manifest_checksum, artifacts_fingerprint,
                 resolved_config, stratum_to_label,
                 n_pas, n_cells, n_genes, n_datasets, n_findings, n_length_rows,
-                indexed_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now())
+                source_id, indexed_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now())
             """,
             [
                 run_id,
@@ -371,6 +380,7 @@ def index_run(con: duckdb.DuckDBPyConnection, run_dir: Path) -> str:
                 run.manifest.entity_counts.get("n_datasets"),
                 run.manifest.entity_counts.get("n_findings"),
                 run.manifest.entity_counts.get("n_length_rows"),
+                source_id,
             ],
         )
         con.execute("COMMIT")
@@ -393,6 +403,39 @@ def index_runs_root(con: duckdb.DuckDBPyConnection, runs_root: Path) -> IndexRep
             run_id = index_run(con, run_dir)
             report.indexed.append(run_id)
         except _UnchangedRun as unchanged:
+            report.skipped_unchanged.append(unchanged.run_id)
+        except ContractValidationError as exc:
+            logger.error("run_dir=%s: FAILED validation, skipping:\n%s", run_dir, exc)
+            report.failed[str(run_dir)] = str(exc)
+        except Exception as exc:  # noqa: BLE001 -- keep indexing other runs no matter what
+            logger.error("run_dir=%s: FAILED to index, skipping: %s", run_dir, exc)
+            report.failed[str(run_dir)] = str(exc)
+    return report
+
+
+def index_source(con: duckdb.DuckDBPyConnection, source_id: str, runs_root: Path) -> IndexReport:
+    """Like `index_runs_root`, but every freshly-(re)indexed run's `runs`
+    row is tagged with `source_id` (dashboard SOURCES manager, api/sources.py).
+
+    Handles the case `index_runs_root`/the bare CLI never has to: a run
+    under this directory that's ALREADY indexed and completely unchanged
+    (e.g. registered earlier via `hub index` directly, or discovered under a
+    second source pointing at a copy of the same run_id) still needs its
+    `source_id` re-pointed at *this* source so "which source did this run
+    come from" stays accurate -- `index_run` deliberately skips all of that
+    row's other columns on an unchanged run (that's the whole idempotency
+    contract, see module docstring), so this does a targeted UPDATE instead
+    of forcing a full re-index just to fix one column.
+    """
+    from peakatail_hub.store import queries  # local import: avoid a store<->index cycle at module load
+
+    report = IndexReport()
+    for run_dir in find_run_dirs(runs_root):
+        try:
+            run_id = index_run(con, run_dir, source_id=source_id)
+            report.indexed.append(run_id)
+        except _UnchangedRun as unchanged:
+            queries.touch_run_source(con, unchanged.run_id, source_id)
             report.skipped_unchanged.append(unchanged.run_id)
         except ContractValidationError as exc:
             logger.error("run_dir=%s: FAILED validation, skipping:\n%s", run_dir, exc)
