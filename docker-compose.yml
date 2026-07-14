@@ -1,0 +1,46 @@
+name: peakatail-hub
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    image: peakatail-hub-backend:latest
+    environment:
+      HUB_DB_PATH: /data/hub.duckdb
+      HUB_CACHE_DIR: /cache
+    volumes:
+      - hub-db:/data
+      - hub-cache:/cache
+      # ── READ ACCESS to your PeakATail run data ─────────────────────────────
+      # PEAKATAIL_RUNS = a HOST directory containing run_manifest.json file(s)
+      # at any depth. Mounted READ-ONLY (:ro) — the hub never writes into your
+      # run dirs. Defaults to the bundled fixture run so it works out of the box.
+      # Index it into DuckDB with `make docker-index` (or `make up`, which does it).
+      #   e.g.  PEAKATAIL_RUNS=/mnt/ssd2/.../runs_root make up
+      - ${PEAKATAIL_RUNS:-./packages/contract/fixtures}:/runs:ro
+    ports:
+      - "${HUB_API_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health').status==200 else 1)"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 20s
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    image: peakatail-hub-frontend:latest
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${HUB_WEB_PORT:-5173}:80"
+    restart: unless-stopped
+
+volumes:
+  hub-db:
+  hub-cache:
