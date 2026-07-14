@@ -3,16 +3,35 @@ and (re)write its rows into the DuckDB store.
 
 Idempotency contract (task brief: "re-running `hub index` on an unchanged
 run must be a fast no-op"): each indexed run's row in the `runs` table
-stores `manifest_checksum`, the sha256 of the raw `run_manifest.json` bytes.
-On a subsequent pass, a run whose manifest bytes are byte-identical to what
-was last indexed is skipped entirely -- no reads of the ledgers/findings/
-h5ad, no deletes, no inserts against any table. This is stronger than an
-mtime/size check (survives copies/rsyncs that preserve content but not
-mtimes) and cheaper than re-validating (a single hash of a small JSON file).
-A run whose manifest changed (including "never indexed before") is fully
-re-processed: its previous rows (if any) are deleted and freshly re-inserted
-inside one transaction, so a partial failure never leaves stale + fresh rows
-mixed for the same run_id.
+stores `manifest_checksum` (sha256 of the raw `run_manifest.json` bytes)
+AND `artifacts_fingerprint` (a hash of every registered artifact's
+(path, size, mtime_ns), see `_artifacts_fingerprint`). A run is skipped
+ONLY when BOTH match what's already stored.
+
+Why both: manifest_checksum ALONE is not sufficient. Bug found 2026-07-14 --
+a fixture was regenerated in place (pas_ledger.tsv/length_long.parquet
+content changed, e.g. a corrected pas_uid formula) without the manifest's
+own bytes changing, and `hub index` silently treated the run as unchanged
+and skipped re-indexing it, leaving the DuckDB store stale indefinitely
+with no error or warning. This is exactly the silent-stale-data failure
+mode the hub exists to prevent (spec §5 "fail loud"). `artifacts_fingerprint`
+closes that gap: any change to a referenced artifact file's size or mtime
+(content changes essentially always change at least one of those) now
+forces a re-index even when the manifest itself is untouched.
+
+mtime+size (not a content hash) is deliberate: it's the "cheaper proxy"
+the task brief allows, and hashing full artifact contents (parquet files,
+and potentially large `clusters.h5ad`) on every `hub index` pass would
+defeat the entire point of the fast-no-op check. The tradeoff -- a content
+change that happens to preserve both size and mtime exactly would still be
+missed -- is accepted as extremely unlikely in practice (the engine writes
+each artifact fresh per run) and is the same tradeoff any mtime-based build
+system (make, etc.) makes.
+
+A run whose manifest OR any artifact fingerprint changed (including "never
+indexed before") is fully re-processed: its previous rows (if any) are
+deleted and freshly re-inserted inside one transaction, so a partial
+failure never leaves stale + fresh rows mixed for the same run_id.
 """
 
 from __future__ import annotations
@@ -45,6 +64,52 @@ def _manifest_checksum(manifest_path: Path) -> str:
     return hashlib.sha256(manifest_path.read_bytes()).hexdigest()
 
 
+def _resolve_artifact_path(run_dir: Path, root: str | None, rel_path: str) -> Path:
+    """Best-effort resolution mirroring `peakatail_io.Run._resolve_artifact`
+    (try relative to `run_dir` first, then relative to the manifest's own
+    `root` field, then bare) -- deliberately independent of that function
+    (no Run/pydantic construction needed here) so the fingerprint can be
+    computed before deciding whether to even open a `Run` at all.
+    """
+    p = Path(rel_path)
+    if p.is_absolute():
+        return p
+    candidate = run_dir / p
+    if candidate.exists():
+        return candidate
+    if root:
+        candidate = Path(root) / p
+        if candidate.exists():
+            return candidate
+    return run_dir / p
+
+
+def _artifacts_fingerprint(run_dir: Path, manifest_json: dict) -> str:
+    """Hash of every registered artifact's (path, size, mtime_ns), sorted by
+    path for determinism. A missing file is fingerprinted too (as a
+    sentinel), so a previously-missing artifact appearing later also
+    triggers a re-index. See module docstring for why this exists alongside
+    `manifest_checksum`.
+    """
+    root = manifest_json.get("root")
+    entries: list[tuple[str, int, int]] = []
+    for artifact in manifest_json.get("artifacts", []):
+        rel_path = artifact.get("path")
+        if not rel_path:
+            continue
+        resolved = _resolve_artifact_path(run_dir, root, rel_path)
+        try:
+            st = resolved.stat()
+            entries.append((rel_path, st.st_size, st.st_mtime_ns))
+        except OSError:
+            entries.append((rel_path, -1, -1))
+    entries.sort(key=lambda e: e[0])
+    digest = hashlib.sha256()
+    for rel_path, size, mtime_ns in entries:
+        digest.update(f"{rel_path}\0{size}\0{mtime_ns}\n".encode())
+    return digest.hexdigest()
+
+
 def find_run_dirs(runs_root: Path) -> list[Path]:
     """Every directory under `runs_root` containing a `run_manifest.json`,
     one dir per run (the manifest itself may be arbitrarily deep).
@@ -52,9 +117,17 @@ def find_run_dirs(runs_root: Path) -> list[Path]:
     return sorted(p.parent for p in Path(runs_root).rglob("run_manifest.json"))
 
 
-def _existing_checksum(con: duckdb.DuckDBPyConnection, run_id: str) -> str | None:
-    row = con.execute("SELECT manifest_checksum FROM runs WHERE run_id = ?", [run_id]).fetchone()
-    return row[0] if row else None
+def _existing_fingerprints(con: duckdb.DuckDBPyConnection, run_id: str) -> tuple[str, str] | None:
+    row = con.execute(
+        "SELECT manifest_checksum, artifacts_fingerprint FROM runs WHERE run_id = ?", [run_id]
+    ).fetchone()
+    if row is None:
+        return None
+    # artifacts_fingerprint may be NULL on a row written before this column
+    # existed (a pre-2026-07-14 DuckDB file) -- treat as "no prior
+    # fingerprint recorded", which never matches, forcing a one-time
+    # re-index rather than erroring or silently trusting stale data.
+    return (row[0], row[1] or "")
 
 
 def _delete_run(con: duckdb.DuckDBPyConnection, run_id: str) -> None:
@@ -235,11 +308,20 @@ def index_run(con: duckdb.DuckDBPyConnection, run_dir: Path) -> str:
     # flagged back to engine-team as a required manifest addition. Remove
     # this fallback once `run_id` is always present.
     run_id = manifest_json.get("run_id") or run_dir.name
+    artifacts_fp = _artifacts_fingerprint(run_dir, manifest_json)
 
-    existing = _existing_checksum(con, run_id)
-    if existing == checksum:
-        logger.info("run_id=%s: manifest unchanged (checksum match), skipping", run_id)
+    existing = _existing_fingerprints(con, run_id)
+    if existing == (checksum, artifacts_fp):
+        logger.info(
+            "run_id=%s: manifest + all registered artifacts unchanged, skipping", run_id
+        )
         raise _UnchangedRun(run_id)
+    if existing is not None and existing[0] == checksum and existing[1] != artifacts_fp:
+        logger.info(
+            "run_id=%s: manifest bytes unchanged but a registered artifact's size/mtime "
+            "changed -- re-indexing (this is the case manifest-checksum-only used to miss)",
+            run_id,
+        )
 
     run = Run.from_dir(run_dir)
     # NOTE (2026-07-14): engine's provenance/pas_ledger.tsv is being wired
@@ -269,17 +351,18 @@ def index_run(con: duckdb.DuckDBPyConnection, run_dir: Path) -> str:
         con.execute(
             """
             INSERT INTO runs (
-                run_id, root, contract_version, manifest_checksum,
+                run_id, root, contract_version, manifest_checksum, artifacts_fingerprint,
                 resolved_config, stratum_to_label,
                 n_pas, n_cells, n_genes, n_datasets, n_findings, n_length_rows,
                 indexed_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now())
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now())
             """,
             [
                 run_id,
                 run.manifest.root,
                 run.manifest.contract_version,
                 checksum,
+                artifacts_fp,
                 json.dumps(run.manifest.resolved_config),
                 json.dumps(run.manifest.stratum_to_label),
                 run.manifest.entity_counts.get("n_pas"),

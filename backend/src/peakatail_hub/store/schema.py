@@ -25,19 +25,28 @@ import duckdb
 
 DDL = """
 CREATE TABLE IF NOT EXISTS runs (
-    run_id            VARCHAR PRIMARY KEY,
-    root              VARCHAR,
-    contract_version  VARCHAR,
-    manifest_checksum VARCHAR,
-    resolved_config   VARCHAR,  -- JSON-encoded dict
-    stratum_to_label  VARCHAR,  -- JSON-encoded dict
-    n_pas             INTEGER,
-    n_cells           INTEGER,
-    n_genes           INTEGER,
-    n_datasets        INTEGER,
-    n_findings        INTEGER,
-    n_length_rows     INTEGER,
-    indexed_at        TIMESTAMP
+    run_id                VARCHAR PRIMARY KEY,
+    root                  VARCHAR,
+    contract_version      VARCHAR,
+    manifest_checksum     VARCHAR,
+    -- Idempotency fix (2026-07-14): manifest_checksum alone is NOT enough --
+    -- a run whose ledgers/parquet/h5ad changed but whose run_manifest.json
+    -- bytes happened not to (e.g. a fixture regenerated in place, or an
+    -- engine writer that emits the manifest before/separately from the
+    -- artifacts it references) was silently treated as unchanged and
+    -- skipped, leaving stale data in the store indefinitely. See
+    -- index/indexer.py::_artifacts_fingerprint -- a run is only skipped
+    -- when BOTH manifest_checksum AND artifacts_fingerprint match.
+    artifacts_fingerprint VARCHAR,
+    resolved_config       VARCHAR,  -- JSON-encoded dict
+    stratum_to_label      VARCHAR,  -- JSON-encoded dict
+    n_pas                 INTEGER,
+    n_cells               INTEGER,
+    n_genes               INTEGER,
+    n_datasets            INTEGER,
+    n_findings            INTEGER,
+    n_length_rows         INTEGER,
+    indexed_at            TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS pas_ledger (

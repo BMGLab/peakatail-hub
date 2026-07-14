@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
+import time
 from pathlib import Path
 
 import duckdb
@@ -62,6 +64,81 @@ def test_idempotent_reindex_is_noop(db_path: Path):
         assert report.failed == {}
         assert counts_after_first == counts_after_second
         assert indexed_at_1 == indexed_at_2  # `runs` row was never rewritten
+    finally:
+        con.close()
+
+
+def test_reindex_when_artifact_changes_but_manifest_bytes_dont(db_path: Path, tmp_path: Path):
+    """Regression test for a real bug (2026-07-14): a run whose manifest
+    bytes are unchanged but whose ledger/parquet/h5ad content changed (e.g.
+    a fixture regenerated in place after a formula fix) was silently
+    skipped by the old checksum-only idempotency check, leaving the DuckDB
+    store stale with no error. `artifacts_fingerprint` (size+mtime of every
+    manifest-registered artifact) must catch this even when
+    `manifest_checksum` alone would not.
+    """
+    run_copy = tmp_path / "run_copy"
+    shutil.copytree(CONTRACT_FIXTURES_DIR, run_copy)
+    manifest_path = run_copy / "run_manifest.json"
+    manifest_bytes_before = manifest_path.read_bytes()
+
+    con = connect(db_path, read_only=False)
+    try:
+        run_id = index_run(con, run_copy)
+        pas_count_before = con.execute(
+            "SELECT count(*) FROM pas_ledger WHERE run_id = ?", [run_id]
+        ).fetchone()[0]
+        drop_reason_before = con.execute(
+            "SELECT drop_reason FROM pas_ledger WHERE run_id = ? AND orig_pas_key = 'ds1:+:5'", [run_id]
+        ).fetchone()[0]
+
+        # Mutate a referenced ARTIFACT (pas_ledger.tsv) without touching
+        # run_manifest.json's bytes at all -- lengthen one row's
+        # drop_reason, which changes the file's size deterministically
+        # (robust regardless of filesystem mtime granularity), and bump the
+        # mtime explicitly too for good measure.
+        ledger_path = run_copy / "pas_ledger.tsv"
+        lines = ledger_path.read_text().splitlines(keepends=True)
+        mutated = [
+            line.replace(
+                "no atlas hit within atlas_distance=100",
+                "no atlas hit within atlas_distance=100 -- REGRESSION TEST MUTATION",
+            )
+            for line in lines
+        ]
+        assert mutated != lines, "fixture pas_ledger.tsv no longer contains the expected row to mutate"
+        ledger_path.write_text("".join(mutated))
+        future = time.time() + 120
+        os.utime(ledger_path, (future, future))
+
+        assert manifest_path.read_bytes() == manifest_bytes_before, "test setup bug: manifest bytes must NOT change"
+
+        # This is the crux of the regression: before the fix, this would
+        # raise _UnchangedRun (caught by index_runs_root as
+        # skipped_unchanged) purely because manifest_checksum still
+        # matched -- the artifact change was invisible to the old check.
+        report = index_runs_root(con, run_copy.parent)
+        assert run_id in report.indexed
+        assert report.skipped_unchanged == []
+        assert report.failed == {}
+
+        pas_count_after = con.execute(
+            "SELECT count(*) FROM pas_ledger WHERE run_id = ?", [run_id]
+        ).fetchone()[0]
+        drop_reason_after = con.execute(
+            "SELECT drop_reason FROM pas_ledger WHERE run_id = ? AND orig_pas_key = 'ds1:+:5'", [run_id]
+        ).fetchone()[0]
+
+        assert pas_count_after == pas_count_before  # same row count, different content
+        assert drop_reason_before != drop_reason_after
+        assert drop_reason_after == "no atlas hit within atlas_distance=100 -- REGRESSION TEST MUTATION"
+
+        # A genuinely-unchanged third pass (no further mutation) IS still a
+        # no-op -- proves the fingerprint updated correctly rather than
+        # forcing every future pass to re-index forever.
+        report_third = index_runs_root(con, run_copy.parent)
+        assert report_third.indexed == []
+        assert report_third.skipped_unchanged == [run_id]
     finally:
         con.close()
 
