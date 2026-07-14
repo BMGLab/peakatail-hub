@@ -330,13 +330,46 @@ def _write_run_manifest(path: Path, artifact_paths: dict[str, Path]) -> None:
             DatasetRef(dataset_id="ds1", bam_paths=["ds1.bam"], label="Dataset 1 (T cell, activated) [truncated-example]"),
             DatasetRef(dataset_id="ds2", bam_paths=["ds2.bam"], label="Dataset 2 (T cell, activated) [truncated-example]"),
         ],
+        # Nested {directories, variables, filters, args} shape -- matches
+        # engine's ema/outputs.py::build_resolved_run_config() (B0 fix)
+        # exactly, not a flat dict. This is what real runs actually emit
+        # into run_manifest.json's resolved_config; the hub's config-diff
+        # view (spec §7d) reads THIS shape, never run_config.json's
+        # argparse-defaults shape (the B0 bug). Keeping the fixture
+        # structurally aligned means that view gets exercised correctly
+        # against fixtures rather than only against real runs.
         resolved_config={
-            "atlas": None,
-            "max_gene_distance": 5000,
-            "min_read": 50,
-            "min_cells": 2,
-            "min_pas_per_cell": 2,
-            "merge_strategy": "before",
+            "directories": {
+                "output_dir": str(FIXTURES_DIR),
+                "bam_dir": None,
+                "gtf_dir": "genes.gtf",
+                "atlas": None,
+                "atlas_distance": None,
+                "datasets": [
+                    {"id": "ds1", "bams": ["ds1.bam"]},
+                    {"id": "ds2", "bams": ["ds2.bam"]},
+                ],
+                "filenames": {},
+            },
+            "variables": {
+                "seqlen": 100,
+                "cb_len": 16,
+                "barcode_tag": "CB",
+                "default_threshold": 0.05,
+                "merge_len": 24,
+                "min_pas_spacing": 10,
+                "min_pas_prominence": 2,
+            },
+            "filters": {
+                "min_read": 50,
+                "min_cells": 2,
+                "min_genes": None,
+                "min_pas_per_cell": 2,
+            },
+            "args": {
+                "merge_strategy": "before",
+                "max_gene_distance": 5000,
+            },
         },
         stratum_to_label={"ds1": STRATUM_LABEL, "ds2": STRATUM_LABEL},
         artifacts=[

@@ -90,12 +90,47 @@
     "n_pas": 4
   },
   "resolved_config": {
-    "atlas": null,
-    "max_gene_distance": 5000,
-    "merge_strategy": "before",
-    "min_cells": 2,
-    "min_pas_per_cell": 2,
-    "min_read": 50
+    "args": {
+      "max_gene_distance": 5000,
+      "merge_strategy": "before"
+    },
+    "directories": {
+      "atlas": null,
+      "atlas_distance": null,
+      "bam_dir": null,
+      "datasets": [
+        {
+          "bams": [
+            "ds1.bam"
+          ],
+          "id": "ds1"
+        },
+        {
+          "bams": [
+            "ds2.bam"
+          ],
+          "id": "ds2"
+        }
+      ],
+      "filenames": {},
+      "gtf_dir": "genes.gtf",
+      "output_dir": "/home/user/D/peakatail-hub/packages/contract/fixtures"
+    },
+    "filters": {
+      "min_cells": 2,
+      "min_genes": null,
+      "min_pas_per_cell": 2,
+      "min_read": 50
+    },
+    "variables": {
+      "barcode_tag": "CB",
+      "cb_len": 16,
+      "default_threshold": 0.05,
+      "merge_len": 24,
+      "min_pas_prominence": 2,
+      "min_pas_spacing": 10,
+      "seqlen": 100
+    }
   },
   "root": "/home/user/D/peakatail-hub/packages/contract/fixtures",
   "run_id": "fixture-run-0001",
