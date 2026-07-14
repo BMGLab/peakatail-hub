@@ -85,14 +85,19 @@ def test_length_rows(contract_run: Run):
     rows = contract_run.length_rows()
     assert len(rows) == 30
     assert all(isinstance(r, LengthRow) for r in rows)
-    # only 'proportion' strategy rows populate pas_uid/rank/direction
+    # only 'proportion' strategy rows populate pas_uid/rank; but ALL
+    # strategies now populate `direction` (engine 2026-07-14 correction --
+    # see LengthRow.direction docstring). shannon's polarity-free direction
+    # is always 'undetermined', never None.
     for r in rows:
+        assert r.direction is not None
         if r.strategy.value == "proportion":
             assert r.pas_uid is not None
             assert r.rank is not None
         else:
             assert r.pas_uid is None
-            assert r.direction is None
+        if r.strategy.value == "shannon":
+            assert r.direction.value == "undetermined"
 
 
 def test_pasbed(contract_run: Run):
