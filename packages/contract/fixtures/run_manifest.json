@@ -1,0 +1,106 @@
+{
+  "artifacts": [
+    {
+      "entity_counts": {
+        "n_rows": 6,
+        "n_surviving": 4
+      },
+      "format": "tsv",
+      "path": "pas_ledger.tsv",
+      "schema_name": "PasLedgerRow",
+      "schema_version": "0.1.0",
+      "stage": "provenance"
+    },
+    {
+      "entity_counts": {
+        "n_rows": 7,
+        "n_surviving": 6
+      },
+      "format": "tsv",
+      "path": "cell_ledger.tsv",
+      "schema_name": "CellLedgerRow",
+      "schema_version": "0.1.0",
+      "stage": "provenance"
+    },
+    {
+      "entity_counts": {
+        "n_rows": 4
+      },
+      "format": "parquet",
+      "path": "findings_long.parquet",
+      "schema_name": "FindingRow",
+      "schema_version": "0.1.0",
+      "stage": "switch_diff"
+    },
+    {
+      "entity_counts": {
+        "n_rows": 30
+      },
+      "format": "parquet",
+      "path": "length_long.parquet",
+      "schema_name": "LengthRow",
+      "schema_version": "0.1.0",
+      "stage": "switch_length"
+    },
+    {
+      "entity_counts": {
+        "n_obs": 6,
+        "n_vars": 4
+      },
+      "format": "h5ad",
+      "path": "clusters.h5ad",
+      "schema_name": "clusters.h5ad",
+      "schema_version": "0.1.0",
+      "stage": "clustering"
+    },
+    {
+      "entity_counts": {
+        "n_pas": 4
+      },
+      "format": "bed",
+      "path": "pasbed.bed",
+      "schema_name": "pasbed.bed",
+      "schema_version": "0.1.0",
+      "stage": "per_dataset_beds"
+    }
+  ],
+  "contract_version": "0.1.0",
+  "datasets": [
+    {
+      "bam_paths": [
+        "ds1.bam"
+      ],
+      "dataset_id": "ds1",
+      "label": "Dataset 1 (T cell, activated) [truncated-example]"
+    },
+    {
+      "bam_paths": [
+        "ds2.bam"
+      ],
+      "dataset_id": "ds2",
+      "label": "Dataset 2 (T cell, activated) [truncated-example]"
+    }
+  ],
+  "entity_counts": {
+    "n_cells": 6,
+    "n_datasets": 2,
+    "n_findings": 4,
+    "n_genes": 2,
+    "n_length_rows": 30,
+    "n_pas": 4
+  },
+  "resolved_config": {
+    "atlas": null,
+    "max_gene_distance": 5000,
+    "merge_strategy": "before",
+    "min_cells": 2,
+    "min_pas_per_cell": 2,
+    "min_read": 50
+  },
+  "root": "/home/user/D/peakatail-hub/packages/contract/fixtures",
+  "run_id": "fixture-run-0001",
+  "stratum_to_label": {
+    "ds1": "TCell_activated",
+    "ds2": "TCell_activated"
+  }
+}

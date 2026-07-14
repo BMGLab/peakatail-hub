@@ -1,0 +1,8 @@
+barcode	dataset_id	total_reads	n_pas	dropped_at	drop_reason	cluster	cell_uid
+AAACCCAAGT	ds1	512	4			0	ds1:AAACCCAAGT
+AAACCCAAGC	ds1	480	4			0	ds1:AAACCCAAGC
+AAACCCAAGG	ds1	390	3			1	ds1:AAACCCAAGG
+TTTGTTGGTA	ds2	470	4			0	ds2:TTTGTTGGTA
+TTTGTTGGTC	ds2	505	4			1	ds2:TTTGTTGGTC
+TTTGTTGGTG	ds2	415	3			1	ds2:TTTGTTGGTG
+AAACCCAAGA	ds1	8	1	cb_filter	total_reads=8 < min_read=50		ds1:AAACCCAAGA

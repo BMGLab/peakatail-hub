@@ -1,0 +1,217 @@
+{
+  "$defs": {
+    "Direction": {
+      "description": "3'UTR usage-shift direction.\n\nData Controller Design \u00a75 (E5) is explicit that this must be an\n**exhaustive, non-nullable-in-spirit** enum -- ``undetermined`` is a\nfirst-class value, not a missing/None field -- because today's\nhand-built `switches_annotated.csv` computed direction ad hoc and\nsilently dropped rows it couldn't classify (bug context: D8\n\"direction/omnibus\" correctness fix). Every :class:`FindingRow` MUST\nset one of these four values; never leave it absent.",
+      "enum": [
+        "shorten",
+        "lengthen",
+        "flat",
+        "undetermined"
+      ],
+      "title": "Direction",
+      "type": "string"
+    },
+    "Strategy": {
+      "description": "`switch diff` differential-usage strategies (IO reference \u00a73 \"switch diff\").",
+      "enum": [
+        "fisher",
+        "nb_pairwise",
+        "nb_multi"
+      ],
+      "title": "Strategy",
+      "type": "string"
+    }
+  },
+  "$id": "https://peakatail.dev/contract/0.1.0/FindingRow.json",
+  "description": "One row of `findings_long` -- the normalized target schema for engine\nstage E5, which does not exist in the engine yet; THIS MODEL DEFINES IT.\n\nGrounded in the real `switch diff` wide TSV columns (IO reference \u00a73):\n``pas_id, gene_id, chrom, start, end, strand, cluster1, cluster2,\npvalue, qvalue, n_cells, n_cells_cluster1, n_cells_cluster2,\nn_reads_pas_cluster1, n_reads_pas_cluster2, odds_ratio,\ndelta_proportion, log2fc`` -- reshaped to long format (one row per PAS x\ncomparison x strategy), keyed by the minted ``pas_uid``/\n``canonical_cluster`` (spec \u00a77g), with ``direction`` added (never\nsilently NA, Data Controller Design D8).\n\nDeliberately NOT included: ``chrom/start/end/strand``. Per spec \u00a77d,\ncoordinates must always be sourced from `pasbed.bed` / the pas ledger\n(join on ``pas_uid``), never duplicated onto a findings row -- that\nduplication is exactly how bug B4 (blank/stale coords in switch\ndiff/length TSVs after a layout change) happened in the first place.",
+  "properties": {
+    "arm": {
+      "description": "Analysis/arm identifier (Data Controller Design \u00a74a 'Analysis(arm)'), e.g. a switch-diff run/config label.",
+      "title": "Arm",
+      "type": "string"
+    },
+    "canonical_cluster": {
+      "description": "This row's subject cluster, cross-sample comparable (post-B6 canonical_cluster round-trip) -- never a raw per-sample leiden label.",
+      "title": "Canonical Cluster",
+      "type": "string"
+    },
+    "celltype": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "GEX-derived cell type label, resolved via RunManifest.stratum_to_label (never a raw/truncated directory name, D10). Gated on roadmap item A1 (ema celltype does not exist yet, spec \u00a77c); always None until then.",
+      "title": "Celltype"
+    },
+    "comparison_cluster": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "The partner cluster for a pairwise comparison (fisher/nb_pairwise). None for nb_multi omnibus rows, which have no single partner.",
+      "title": "Comparison Cluster"
+    },
+    "delta_proportion": {
+      "description": "NOT 'delta_p' -- see research_stats_validity_bugs: this is a proportion delta, not a p-value delta.",
+      "title": "Delta Proportion",
+      "type": "number"
+    },
+    "direction": {
+      "$ref": "#/$defs/Direction",
+      "description": "Never silently absent -- one of shorten/lengthen/flat/undetermined (D8/E5)."
+    },
+    "finding_uid": {
+      "description": "Minted via ids.finding_uid(resolved_label, var_name, strategy, arm, pas_uid).",
+      "title": "Finding Uid",
+      "type": "string"
+    },
+    "gene_id": {
+      "description": "Ensembl gene id, sourced from PasLedgerRow.gene_id (never var['gene_id'], B7).",
+      "title": "Gene Id",
+      "type": "string"
+    },
+    "log2fc": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "NB-strategy log2 fold change; may be None for fisher rows that only report odds_ratio.",
+      "title": "Log2Fc"
+    },
+    "n_cells": {
+      "description": "Total cells tested across canonical_cluster (+ comparison_cluster if pairwise).",
+      "title": "N Cells",
+      "type": "integer"
+    },
+    "n_cells_comparison": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Cells in comparison_cluster specifically, if pairwise.",
+      "title": "N Cells Comparison"
+    },
+    "n_cells_subject": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Cells in canonical_cluster specifically (parity with n_cells_cluster1/2).",
+      "title": "N Cells Subject"
+    },
+    "n_reads": {
+      "description": "Total reads at this PAS across the cells tested.",
+      "title": "N Reads",
+      "type": "integer"
+    },
+    "n_reads_comparison": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Reads at this PAS within comparison_cluster specifically, if pairwise.",
+      "title": "N Reads Comparison"
+    },
+    "n_reads_subject": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Reads at this PAS within canonical_cluster specifically.",
+      "title": "N Reads Subject"
+    },
+    "odds_ratio": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Fisher-strategy only; kept for parity with the real per-comparison TSV column.",
+      "title": "Odds Ratio"
+    },
+    "pas_uid": {
+      "description": "Content-addressed PAS id; join key into PasLedgerRow for coordinates/tier/provenance.",
+      "title": "Pas Uid",
+      "type": "string"
+    },
+    "pvalue": {
+      "title": "Pvalue",
+      "type": "number"
+    },
+    "qvalue": {
+      "title": "Qvalue",
+      "type": "number"
+    },
+    "strategy": {
+      "$ref": "#/$defs/Strategy"
+    },
+    "utr_class": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Tandem UTR / alternative-last-exon / etc., from --isoform-agg per_isoform resolution. Gated on E5 landing; None until available.",
+      "title": "Utr Class"
+    }
+  },
+  "required": [
+    "finding_uid",
+    "pas_uid",
+    "gene_id",
+    "canonical_cluster",
+    "strategy",
+    "arm",
+    "direction",
+    "qvalue",
+    "pvalue",
+    "delta_proportion",
+    "n_cells",
+    "n_reads"
+  ],
+  "title": "FindingRow",
+  "type": "object"
+}

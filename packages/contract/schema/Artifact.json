@@ -1,0 +1,61 @@
+{
+  "$defs": {
+    "Format": {
+      "description": "Artifact serialization format (`PeakATail_Pipeline_IO_Reference.md` \u00a71-4).",
+      "enum": [
+        "bed",
+        "mtx",
+        "tsv",
+        "h5ad",
+        "parquet",
+        "json"
+      ],
+      "title": "Format",
+      "type": "string"
+    }
+  },
+  "$id": "https://peakatail.dev/contract/0.1.0/Artifact.json",
+  "description": "One output artifact registered in the run manifest.\n\nExistence per Data Controller Design \u00a75 (E2): \"``run_manifest.json``:\n``OutputManager.register_artifact()`` ... lists every artifact (path,\nstage, format, schema@version, entity counts)\". This is what lets the\nhub indexer discover artifacts without hardcoding paths, and lets\n``validate()`` check that required artifacts are present.",
+  "properties": {
+    "entity_counts": {
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "description": "e.g. {'n_pas': 812, 'n_cells': 4213}. Used for the QC drop-funnel and validate() invariants.",
+      "title": "Entity Counts",
+      "type": "object"
+    },
+    "format": {
+      "$ref": "#/$defs/Format"
+    },
+    "path": {
+      "description": "Path to the artifact, relative to RunManifest.root unless absolute.",
+      "title": "Path",
+      "type": "string"
+    },
+    "schema_name": {
+      "description": "Which contract schema this artifact conforms to, e.g. 'PasLedgerRow', 'clusters.h5ad'.",
+      "title": "Schema Name",
+      "type": "string"
+    },
+    "schema_version": {
+      "default": "0.1.0",
+      "description": "Schema version this artifact was written against (checked by validate()).",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "stage": {
+      "description": "Producing pipeline stage, e.g. '01_peak_calling', '09_clustering', 'switch_diff', 'switch_length'. Free-form (not an enum) because the engine's stage set is open-ended (IO reference \u00a71/\u00a74 NN_<stage> dirs).",
+      "title": "Stage",
+      "type": "string"
+    }
+  },
+  "required": [
+    "path",
+    "stage",
+    "format",
+    "schema_name"
+  ],
+  "title": "Artifact",
+  "type": "object"
+}
