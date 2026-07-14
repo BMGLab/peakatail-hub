@@ -1,0 +1,12 @@
+# Local scoping (see packages/contract/.gitignore -- same note applies:
+# the repo root .gitignore currently doesn't take effect for this path).
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
+build/

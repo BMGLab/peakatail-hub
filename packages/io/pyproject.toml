@@ -1,0 +1,56 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "peakatail-io"
+version = "0.1.0"
+description = "Run read-facade for peakatail-hub: reads on-disk PeakATail pipeline run directories (manifest, provenance ledgers, findings/length long tables, pasbed, clusters.h5ad) into peakatail-contract pydantic models."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [{ name = "PeakATail / peakatail-hub" }]
+classifiers = [
+  "Programming Language :: Python :: 3.12",
+  "Intended Audience :: Science/Research",
+]
+
+# Unlike peakatail-contract (spec §7a: schema-only, zero heavy deps), this
+# package's whole job IS reading anndata/h5ad/sparse-matrix formats, so those
+# ARE declared runtime deps here. The mitigation instead is a *lazy-import*
+# discipline: `import anndata` / `import h5py` / `import scipy...` statements
+# must be local to the function body in every function that opens an .h5ad
+# or a sparse matrix, so a bare `import peakatail_io` (e.g. to read a
+# manifest or a BED/TSV file) stays fast and never pulls anndata into
+# process memory. See the module docstrings in run.py for the functions
+# this applies to.
+dependencies = [
+  "peakatail-contract",
+  "pandas>=2",
+  "pyarrow>=16",
+  "numpy>=1.26",
+  "anndata>=0.10",
+  "h5py>=3.10",
+  "scipy>=1.11",
+]
+
+[project.optional-dependencies]
+test = [
+  "pytest>=8",
+]
+dev = [
+  "peakatail-io[test]",
+  "ruff>=0.6",
+]
+
+[tool.uv.sources]
+peakatail-contract = { path = "../contract", editable = true }
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/peakatail_io"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+  "integration: reads a real on-disk PeakATail run dir; skipped if the path is not present on this machine.",
+]
