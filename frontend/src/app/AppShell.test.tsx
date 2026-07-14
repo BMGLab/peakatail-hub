@@ -5,15 +5,17 @@ import { renderWithProviders } from '../test/testUtils'
 import { AppShell } from './AppShell'
 
 describe('AppShell', () => {
-  it('renders the nav rail links and the detail panel empty state', async () => {
+  it('renders every tab as a first-class nav link, Dashboard landing by default', async () => {
     renderWithProviders(<AppShell />)
 
-    // Nav rail: IGV-style reframe -- "Browser" (GeneView, the landing route)
-    // leads, then the searchable entity browsers, then the secondary
-    // analysis views. Findings is intentionally NOT a nav link here (see
-    // below) -- it's a drawer toggled from the TopBar, not a route.
+    // Every route is one click away via the nav rail -- Dashboard (landing),
+    // Browser (the one IGV-style tab), then the readable tables (Findings +
+    // entity browsers), then the secondary analysis views. Tables are NOT
+    // demoted behind a drawer/toggle here -- Findings is a normal nav link.
     expect(screen.getByRole('navigation', { name: /primary/i })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /^dashboard$/i })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /^browser$/i })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /^findings$/i })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /^genes$/i })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /^pas$/i })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /^cells$/i })).toBeInTheDocument()
@@ -22,7 +24,10 @@ describe('AppShell', () => {
     expect(screen.getByRole('link', { name: /audit/i })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /compare/i })).toBeInTheDocument()
 
-    // Shared detail panel starts empty
+    // No lingering drawer-toggle affordance -- Findings has no button role.
+    expect(screen.queryByRole('button', { name: /^findings$/i })).not.toBeInTheDocument()
+
+    // Shared detail panel starts empty regardless of which route is mounted
     expect(screen.getByLabelText(/detail panel/i)).toBeInTheDocument()
     expect(screen.getByText(/nothing selected/i)).toBeInTheDocument()
 
@@ -30,28 +35,19 @@ describe('AppShell', () => {
     // old generic "global search" label (it now also accepts chr:coords).
     expect(screen.getByLabelText(/genome location search/i)).toBeInTheDocument()
 
-    // Findings is reachable via a TopBar toggle (opens a secondary drawer),
-    // not a nav-rail route link.
-    expect(screen.queryByRole('link', { name: /findings/i })).not.toBeInTheDocument()
-    const findingsToggle = screen.getByRole('button', { name: /findings/i })
-    expect(findingsToggle).toBeInTheDocument()
-    expect(findingsToggle).toHaveAttribute('aria-pressed', 'false')
+    // "/" is Dashboard (the landing view), not the genome browser.
+    expect(await screen.findByRole('heading', { name: /dashboard/i })).toBeInTheDocument()
   })
 
-  it('opens the findings drawer from the TopBar toggle', async () => {
+  it('navigates to a normal Findings route (not a drawer) from the nav rail', async () => {
     const user = userEvent.setup()
     renderWithProviders(<AppShell />)
 
-    expect(screen.queryByRole('dialog', { name: /findings/i })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('link', { name: /^findings$/i }))
 
-    await user.click(screen.getByRole('button', { name: /findings/i }))
-
-    expect(screen.getByRole('dialog', { name: /findings/i })).toBeInTheDocument()
-    // The drawer mounts the real FindingsView -- its facets panel heading is
-    // a reliable signal it rendered, not just an empty shell.
+    // FindingsView mounted as the main route content -- its facets panel
+    // heading is a reliable signal, and there's no dialog/backdrop wrapper.
     expect(await screen.findByRole('heading', { name: 'Facets' })).toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: /close findings drawer/i }))
-    expect(screen.queryByRole('dialog', { name: /findings/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 })

@@ -1,11 +1,10 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useRuns, useSearch } from '@lib/api/hooks'
 import { api } from '@lib/api/client'
 import { useScopeStore } from '@state/useScopeStore'
 import { useSelectionStore } from '@state/useSelectionStore'
 import { usePinStore } from '@state/usePinStore'
-import { useDrawerStore } from '@state/useDrawerStore'
 import type { RunSummary, SearchResult } from '@lib/contract/types'
 import './TopBar.css'
 
@@ -40,8 +39,6 @@ export function TopBar() {
   const { runId, datasetId, setScope } = useScopeStore()
   const select = useSelectionStore((s) => s.select)
   const pinned = usePinStore((s) => s.pinned)
-  const findingsOpen = useDrawerStore((s) => s.findingsOpen)
-  const toggleFindings = useDrawerStore((s) => s.toggleFindings)
 
   function handleResultClick(r: SearchResult) {
     setOpen(false)
@@ -104,9 +101,12 @@ export function TopBar() {
 
   return (
     <header className="topbar" role="banner">
-      <div className="topbar__brand">
-        peakatail<span className="topbar__brand-accent">-hub</span>
-      </div>
+      <Link to="/" className="topbar__brand" aria-label="peakatail-hub home (Dashboard)">
+        <img src="/brand/peakatail_logo_sm.png" alt="" className="topbar__brand-mark" width={28} height={28} />
+        <span className="brand-wordmark">
+          peakatail<span className="topbar__brand-accent">-hub</span>
+        </span>
+      </Link>
 
       <form
         className="topbar__location"
@@ -184,16 +184,6 @@ export function TopBar() {
           ))}
         </select>
       </label>
-
-      <button
-        type="button"
-        className={findingsOpen ? 'topbar__findings topbar__findings--active' : 'topbar__findings'}
-        onClick={toggleFindings}
-        aria-pressed={findingsOpen}
-        title="Findings table (secondary panel)"
-      >
-        Findings
-      </button>
 
       <div className="topbar__pins" title="Pinned entities">
         <span aria-hidden>📌</span>

@@ -2,13 +2,13 @@ import { NavLink, useLocation } from 'react-router-dom'
 import { navRoutes } from './routes'
 import './NavRail.css'
 
-/** Genome-browser-first grouping: the browser link leads (its own group),
- * then "which run/data" (Dashboard) + the searchable entity browsers, then
- * everything else -- matches how `navRoutes` is ordered in routes.tsx, this
- * just draws a divider after each group so the IGV-style hierarchy
- * (browser > data > secondary analysis views) reads visually, not just in
- * list order. */
-const GROUP_BREAK_AFTER = new Set(['/', '/browse/cells'])
+/** Every tab is a first-class, one-click-away route (Dashboard is the
+ * landing view; Findings/Genes/PAS/Cells are normal readable tables; only
+ * "Browser" is the IGV-style genome browser) -- these are just visual
+ * dividers between groups, matching `navRoutes`'s order in routes.tsx:
+ * Dashboard (its own group) | Browser (the one IGV tab) | the readable
+ * tables (Findings + entity browsers) | secondary analysis views. */
+const GROUP_BREAK_AFTER = new Set(['/', '/browser', '/browse/cells'])
 
 export function NavRail() {
   const location = useLocation()

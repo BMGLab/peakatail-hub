@@ -9,10 +9,19 @@
 }
 
 .topbar__brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-weight: var(--fw-bold, 700);
   font-size: 15px;
   color: var(--text-h);
   white-space: nowrap;
+  text-decoration: none;
+}
+
+.topbar__brand-mark {
+  display: block;
+  border-radius: 6px;
 }
 
 .topbar__brand-accent {
@@ -129,26 +138,6 @@
   border: 1px solid var(--border);
   background: var(--bg);
   color: var(--text);
-}
-
-.topbar__findings {
-  border: 1px solid var(--border);
-  background: var(--bg);
-  color: var(--text);
-  border-radius: var(--radius);
-  padding: 6px 12px;
-  font-size: 13px;
-  white-space: nowrap;
-}
-
-.topbar__findings:hover {
-  background: var(--bg-hover);
-}
-
-.topbar__findings--active {
-  border-color: var(--accent);
-  background: var(--accent-dim);
-  color: var(--accent-strong, var(--accent));
 }
 
 .topbar__pins {
