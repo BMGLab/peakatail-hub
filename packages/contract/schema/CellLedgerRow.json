@@ -1,0 +1,64 @@
+{
+  "$id": "https://peakatail.dev/contract/0.1.0/CellLedgerRow.json",
+  "description": "One row of the append-only cell provenance ledger.\n\nColumns per Data Controller Design \u00a72 exactly: ``barcode, dataset_id,\ntotal_reads, n_pas, dropped_at, drop_reason, cluster``.",
+  "properties": {
+    "barcode": {
+      "description": "Raw cell barcode as read from the BAM barcode_tag (not yet namespaced).",
+      "title": "Barcode",
+      "type": "string"
+    },
+    "cluster": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Raw per-dataset leiden label (None if dropped before clustering). Not cross-sample comparable -- see cluster_uid / canonical_cluster.",
+      "title": "Cluster"
+    },
+    "dataset_id": {
+      "title": "Dataset Id",
+      "type": "string"
+    },
+    "drop_reason": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Drop Reason"
+    },
+    "dropped_at": {
+      "default": "",
+      "description": "Empty string if this cell survived to clusters.h5ad; otherwise the stage where it was dropped (e.g. 'cb_filter' D4, 'preprocess' D6).",
+      "title": "Dropped At",
+      "type": "string"
+    },
+    "n_pas": {
+      "description": "Number of distinct PAS this cell has >=1 read at. NOTE (spec \u00a77e): the real pipeline's clusters.h5ad stores this under obs['n_genes'], which is a scanpy-convention name left over from gene-expression data -- it is PAS-per-cell, NOT a gene count. This field is deliberately named n_pas to avoid re-propagating that mislabel into the contract.",
+      "title": "N Pas",
+      "type": "integer"
+    },
+    "total_reads": {
+      "description": "Total 3'-end reads observed for this barcode before any filtering.",
+      "title": "Total Reads",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "barcode",
+    "dataset_id",
+    "total_reads",
+    "n_pas"
+  ],
+  "title": "CellLedgerRow",
+  "type": "object"
+}

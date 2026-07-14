@@ -1,0 +1,160 @@
+{
+  "$defs": {
+    "Artifact": {
+      "description": "One output artifact registered in the run manifest.\n\nExistence per Data Controller Design \u00a75 (E2): \"``run_manifest.json``:\n``OutputManager.register_artifact()`` ... lists every artifact (path,\nstage, format, schema@version, entity counts)\". This is what lets the\nhub indexer discover artifacts without hardcoding paths, and lets\n``validate()`` check that required artifacts are present.",
+      "properties": {
+        "entity_counts": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "description": "e.g. {'n_pas': 812, 'n_cells': 4213}. Used for the QC drop-funnel and validate() invariants.",
+          "title": "Entity Counts",
+          "type": "object"
+        },
+        "format": {
+          "$ref": "#/$defs/Format"
+        },
+        "path": {
+          "description": "Path to the artifact, relative to RunManifest.root unless absolute.",
+          "title": "Path",
+          "type": "string"
+        },
+        "schema_name": {
+          "description": "Which contract schema this artifact conforms to, e.g. 'PasLedgerRow', 'clusters.h5ad'.",
+          "title": "Schema Name",
+          "type": "string"
+        },
+        "schema_version": {
+          "default": "0.1.0",
+          "description": "Schema version this artifact was written against (checked by validate()).",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "stage": {
+          "description": "Producing pipeline stage, e.g. '01_peak_calling', '09_clustering', 'switch_diff', 'switch_length'. Free-form (not an enum) because the engine's stage set is open-ended (IO reference \u00a71/\u00a74 NN_<stage> dirs).",
+          "title": "Stage",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "stage",
+        "format",
+        "schema_name"
+      ],
+      "title": "Artifact",
+      "type": "object"
+    },
+    "DatasetRef": {
+      "description": "One dataset (sample/replicate-group) registered in a run.\n\n``label`` is the raw, human-authored stratum/sample label (e.g. as it\nappears in the config or an un-resolved output directory name). It is\nkept here for display/traceability ONLY. Callers minting IDs or joining\nacross strata MUST resolve through ``RunManifest.stratum_to_label``\ninstead -- ``label`` may be exactly the 48-char-truncated directory name\nthe D10 bug produces, and is therefore unsafe as a join key.",
+      "properties": {
+        "bam_paths": {
+          "description": "Absolute or run-relative paths to the (pooled, if merge_strategy=before) BAM(s).",
+          "items": {
+            "type": "string"
+          },
+          "title": "Bam Paths",
+          "type": "array"
+        },
+        "dataset_id": {
+          "description": "Stable dataset identifier (e.g. GSM/sample id).",
+          "title": "Dataset Id",
+          "type": "string"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Raw human-authored label; NOT safe for ID minting or joins (see stratum_to_label).",
+          "title": "Label"
+        }
+      },
+      "required": [
+        "dataset_id"
+      ],
+      "title": "DatasetRef",
+      "type": "object"
+    },
+    "Format": {
+      "description": "Artifact serialization format (`PeakATail_Pipeline_IO_Reference.md` \u00a71-4).",
+      "enum": [
+        "bed",
+        "mtx",
+        "tsv",
+        "h5ad",
+        "parquet",
+        "json"
+      ],
+      "title": "Format",
+      "type": "string"
+    }
+  },
+  "$id": "https://peakatail.dev/contract/0.1.0/RunManifest.json",
+  "description": "The top-level, engine-written manifest for one pipeline run.\n\nThis is THE artifact that lets the hub index a run dir without\nhardcoding paths (Data Controller Design \u00a75 E2) and is the only source\nthe hub may read the resolved config from (spec \u00a77d: \"Config-diff reads\nthe resolved config from the E2 manifest, not run_config.json, which\nrecords argparse defaults -- B0\").",
+  "properties": {
+    "artifacts": {
+      "items": {
+        "$ref": "#/$defs/Artifact"
+      },
+      "title": "Artifacts",
+      "type": "array"
+    },
+    "contract_version": {
+      "default": "0.1.0",
+      "description": "Semver of peakatail-contract this manifest was written against. validate() rejects manifests whose major version differs from the installed peakatail_contract.CONTRACT_VERSION.",
+      "title": "Contract Version",
+      "type": "string"
+    },
+    "datasets": {
+      "items": {
+        "$ref": "#/$defs/DatasetRef"
+      },
+      "title": "Datasets",
+      "type": "array"
+    },
+    "entity_counts": {
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "description": "Run-level totals, e.g. {'n_pas': 812, 'n_cells': 4213, 'n_genes': 1890, 'n_datasets': 2}.",
+      "title": "Entity Counts",
+      "type": "object"
+    },
+    "resolved_config": {
+      "additionalProperties": true,
+      "description": "The FULLY RESOLVED RunConfig object (main.py:172), NOT argparse defaults (bug B0: run_config.json today serializes vars(args), so e.g. atlas=null even on snapped runs). This is the only config surface the hub's config-diff view may read.",
+      "title": "Resolved Config",
+      "type": "object"
+    },
+    "root": {
+      "description": "Absolute path to the run's output root directory.",
+      "title": "Root",
+      "type": "string"
+    },
+    "run_id": {
+      "description": "Unique identifier for this pipeline run.",
+      "title": "Run Id",
+      "type": "string"
+    },
+    "stratum_to_label": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "description": "Maps an internal stratum/dataset key -> its full, untruncated label (celltype/stage/sample name). Fixes bug D10: output directory names are truncated to 48 chars by the filesystem, which silently merges distinct strata if used directly as a join key. finding_uid minting (ids.finding_uid) requires the resolved label from THIS map, never a raw directory name.",
+      "title": "Stratum To Label",
+      "type": "object"
+    }
+  },
+  "required": [
+    "run_id",
+    "root"
+  ],
+  "title": "RunManifest",
+  "type": "object"
+}

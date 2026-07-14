@@ -1,0 +1,125 @@
+{
+  "$defs": {
+    "Tier": {
+      "description": "PAS-to-gene assignment confidence tier.\n\nMirrors the exact string constants in `ema/annotate/find_close.py`\n(``TIER_1``/``TIER_2``/``TIER_3``/``INTERGENIC``) so ledger-writers can\npass the engine's own values through unchanged. Per Data Controller\nDesign \u00a71/\u00a72, this value is *computed then discarded* today (never\nwritten) -- the pas_ledger is what finally persists it.",
+      "enum": [
+        "TIER_1",
+        "TIER_2",
+        "TIER_3",
+        "INTERGENIC"
+      ],
+      "title": "Tier",
+      "type": "string"
+    }
+  },
+  "$id": "https://peakatail.dev/contract/0.1.0/PasLedgerRow.json",
+  "description": "One row of the append-only PAS provenance ledger.\n\nColumns per Data Controller Design \u00a72 exactly:\n``orig_pas_key, chrom, start, end, strand, unified_pas_id,\nsnap_distance_bp, gene_id, gene_distance_bp, tier, last_stage,\ndropped_at, drop_reason``.\n\nBuys the invariant (\u00a72 + spec \u00a75 testing): ``rows(pas_ledger where\ndropped_at == \"\") == n_vars(clusters.h5ad)`` -- see validate.py.",
+  "properties": {
+    "chrom": {
+      "title": "Chrom",
+      "type": "string"
+    },
+    "drop_reason": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Human-readable reason, e.g. 'no atlas hit within atlas_distance=100'.",
+      "title": "Drop Reason"
+    },
+    "dropped_at": {
+      "default": "",
+      "description": "Empty string if this PAS survived to clusters.h5ad. Otherwise the stage name where it was dropped (one of the 7 drop points D1-D7, e.g. 'atlas_snap', 'cb_filter', 'pas_gene_assignment', 'preprocess', 'marker_subset'). NEVER left ambiguous between 'survived' and 'we forgot to record'; always explicitly '' or a stage name.",
+      "title": "Dropped At",
+      "type": "string"
+    },
+    "end": {
+      "title": "End",
+      "type": "integer"
+    },
+    "gene_distance_bp": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Distance (bp) from this PAS to gene_id's 3' end, if assigned.",
+      "title": "Gene Distance Bp"
+    },
+    "gene_id": {
+      "default": "",
+      "description": "Ensembl gene id assigned by PAS->gene distance join. Empty string if INTERGENIC (tier).",
+      "title": "Gene Id",
+      "type": "string"
+    },
+    "last_stage": {
+      "description": "The last pipeline stage in which this PAS entity was observed alive.",
+      "title": "Last Stage",
+      "type": "string"
+    },
+    "orig_pas_key": {
+      "description": "Pre-unify, run-local PAS key as first minted by peak-calling, e.g. '<dataset_id>:<strand>:<raw_pas_id>'.",
+      "title": "Orig Pas Key",
+      "type": "string"
+    },
+    "snap_distance_bp": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Distance (bp) to the atlas PAS this was snapped to, if the run used atlas snapping (D1). None when merge_strategy has no atlas, or when this PAS never got a hit in range (in which case dropped_at must be set).",
+      "title": "Snap Distance Bp"
+    },
+    "start": {
+      "title": "Start",
+      "type": "integer"
+    },
+    "strand": {
+      "description": "'+' or '-'.",
+      "title": "Strand",
+      "type": "string"
+    },
+    "tier": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Tier"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Confidence tier from PAS->gene assignment (D5); None only if not yet annotated."
+    },
+    "unified_pas_id": {
+      "description": "Post-unify (atlas-snap or coordinate-merge) run-local id, e.g. the merged BED col4 value.",
+      "title": "Unified Pas Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "orig_pas_key",
+    "chrom",
+    "start",
+    "end",
+    "strand",
+    "unified_pas_id",
+    "last_stage"
+  ],
+  "title": "PasLedgerRow",
+  "type": "object"
+}

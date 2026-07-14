@@ -1,0 +1,111 @@
+{
+  "$defs": {
+    "Direction": {
+      "description": "3'UTR usage-shift direction.\n\nData Controller Design \u00a75 (E5) is explicit that this must be an\n**exhaustive, non-nullable-in-spirit** enum -- ``undetermined`` is a\nfirst-class value, not a missing/None field -- because today's\nhand-built `switches_annotated.csv` computed direction ad hoc and\nsilently dropped rows it couldn't classify (bug context: D8\n\"direction/omnibus\" correctness fix). Every :class:`FindingRow` MUST\nset one of these four values; never leave it absent.",
+      "enum": [
+        "shorten",
+        "lengthen",
+        "flat",
+        "undetermined"
+      ],
+      "title": "Direction",
+      "type": "string"
+    },
+    "LengthStrategy": {
+      "description": "`switch length` 3'UTR-shortening strategies (IO reference \u00a73 \"switch length\").\n\nEach strategy has distinct *native* columns in the real TSVs\n(`pdui_classic.tsv`, `pdui_proportion.tsv`, `entropy_shannon.tsv`);\n:class:`LengthRow` normalizes all three into one row schema with this\nfield as the discriminator.",
+      "enum": [
+        "classic",
+        "proportion",
+        "shannon"
+      ],
+      "title": "LengthStrategy",
+      "type": "string"
+    }
+  },
+  "$id": "https://peakatail.dev/contract/0.1.0/LengthRow.json",
+  "description": "One row of `length_long` -- the normalized target for the three\n`switch length` strategies, each of which has distinct native columns\ntoday (IO reference \u00a73 \"switch length\"):\n\n* ``classic``: ``gene_id, transcript_id, cell, pdui, cluster``\n* ``proportion``: ``gene_id, transcript_id, pas_id, rank, cell, proportion, cluster``\n* ``shannon``: ``gene_id, cell, entropy, cluster``\n\n``value`` holds pdui / proportion / entropy depending on ``strategy``.\nPer spec \u00a77c, only ``proportion`` is per-PAS directional today, so\n``pas_uid``/``rank``/``direction`` are only populated for that strategy.",
+  "properties": {
+    "canonical_cluster": {
+      "description": "Cross-sample comparable cluster label (post-B6), not a raw leiden label.",
+      "title": "Canonical Cluster",
+      "type": "string"
+    },
+    "cell_uid": {
+      "description": "Namespaced cell id, minted via ids.cell_uid(dataset_id, barcode).",
+      "title": "Cell Uid",
+      "type": "string"
+    },
+    "direction": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Direction"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Nullable: per spec \u00a77c only the 'proportion' strategy carries a per-PAS directional call today; classic/shannon are gene-level trend measures without a per-row direction yet. Populate for proportion rows; leave None for classic/shannon until the engine defines one."
+    },
+    "gene_id": {
+      "title": "Gene Id",
+      "type": "string"
+    },
+    "pas_uid": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Populated only for strategy='proportion' (per-PAS row).",
+      "title": "Pas Uid"
+    },
+    "rank": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Populated only for strategy='proportion' (PAS rank within gene/transcript, e.g. proximal=0).",
+      "title": "Rank"
+    },
+    "strategy": {
+      "$ref": "#/$defs/LengthStrategy"
+    },
+    "transcript_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "ENST id for classic/proportion. Deliberately None (not the pipeline's '_gene_' sentinel) when isoform-agg is per-gene mode -- Data Controller Design \u00a71 notes the sentinel is fabricated, not a real transcript; the contract represents 'no specific isoform' as an explicit null instead.",
+      "title": "Transcript Id"
+    },
+    "value": {
+      "description": "pdui (classic) / proportion (proportion) / entropy (shannon), per `strategy`.",
+      "title": "Value",
+      "type": "number"
+    }
+  },
+  "required": [
+    "strategy",
+    "gene_id",
+    "cell_uid",
+    "canonical_cluster",
+    "value"
+  ],
+  "title": "LengthRow",
+  "type": "object"
+}

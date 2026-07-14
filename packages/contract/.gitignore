@@ -1,0 +1,13 @@
+# Local scoping (the repo root .gitignore has a formatting bug and its
+# patterns currently don't take effect -- see note in README "Open
+# questions"). Keep this local .gitignore until that's fixed upstream.
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
+build/

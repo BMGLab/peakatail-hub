@@ -1,0 +1,49 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "peakatail-contract"
+version = "0.1.0"
+description = "Schema-only coupling layer between the PeakATail engine and peakatail-hub: pydantic models, ID grammar, and validate() for run manifests, ledgers, and normalized finding/length tables."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [{ name = "PeakATail / peakatail-hub" }]
+classifiers = [
+  "Programming Language :: Python :: 3.12",
+  "Intended Audience :: Science/Research",
+]
+
+# HARD CONSTRAINT (spec §7a): schema-only, zero heavy runtime deps. Do NOT add
+# anndata/h5py/scipy/scanpy/pysam/pyarrow here -- those belong to peakatail-io
+# (a separate package) or to the `test`/`dev` extras below, imported lazily.
+dependencies = [
+  "pydantic>=2,<3",
+]
+
+[project.optional-dependencies]
+# Only needed to (a) generate/regenerate fixtures, and (b) run the test suite,
+# which reads the generated .h5ad/.parquet fixtures. Never required to
+# `import peakatail_contract`.
+test = [
+  "pytest>=8",
+  "anndata>=0.10",
+  "h5py>=3.10",
+  "pyarrow>=16",
+  "pandas>=2",
+  "numpy>=1.26",
+]
+dev = [
+  "peakatail-contract[test]",
+  "ruff>=0.6",
+]
+
+[project.scripts]
+peakatail-contract-schema-export = "peakatail_contract.schema_export:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/peakatail_contract"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

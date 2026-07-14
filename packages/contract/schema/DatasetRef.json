@@ -1,0 +1,37 @@
+{
+  "$id": "https://peakatail.dev/contract/0.1.0/DatasetRef.json",
+  "description": "One dataset (sample/replicate-group) registered in a run.\n\n``label`` is the raw, human-authored stratum/sample label (e.g. as it\nappears in the config or an un-resolved output directory name). It is\nkept here for display/traceability ONLY. Callers minting IDs or joining\nacross strata MUST resolve through ``RunManifest.stratum_to_label``\ninstead -- ``label`` may be exactly the 48-char-truncated directory name\nthe D10 bug produces, and is therefore unsafe as a join key.",
+  "properties": {
+    "bam_paths": {
+      "description": "Absolute or run-relative paths to the (pooled, if merge_strategy=before) BAM(s).",
+      "items": {
+        "type": "string"
+      },
+      "title": "Bam Paths",
+      "type": "array"
+    },
+    "dataset_id": {
+      "description": "Stable dataset identifier (e.g. GSM/sample id).",
+      "title": "Dataset Id",
+      "type": "string"
+    },
+    "label": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Raw human-authored label; NOT safe for ID minting or joins (see stratum_to_label).",
+      "title": "Label"
+    }
+  },
+  "required": [
+    "dataset_id"
+  ],
+  "title": "DatasetRef",
+  "type": "object"
+}
