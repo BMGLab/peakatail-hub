@@ -226,7 +226,15 @@ def index_run(con: duckdb.DuckDBPyConnection, run_dir: Path) -> str:
     manifest_path = run_dir / "run_manifest.json"
     checksum = _manifest_checksum(manifest_path)
     manifest_json = json.loads(manifest_path.read_text())
-    run_id = manifest_json["run_id"]
+    # NOTE (2026-07-14): engine-team's real E2 writer does not yet emit a
+    # top-level `run_id` key (their message only listed contract_version/
+    # timestamp/artifacts/resolved_config/id_grammar/stratum_to_label) even
+    # though our frozen RunManifest schema requires one and this indexer
+    # keys every DuckDB table on it. Falling back to the run directory name
+    # so real engine runs can still be indexed while that's reconciled --
+    # flagged back to engine-team as a required manifest addition. Remove
+    # this fallback once `run_id` is always present.
+    run_id = manifest_json.get("run_id") or run_dir.name
 
     existing = _existing_checksum(con, run_id)
     if existing == checksum:
@@ -234,7 +242,15 @@ def index_run(con: duckdb.DuckDBPyConnection, run_dir: Path) -> str:
         raise _UnchangedRun(run_id)
 
     run = Run.from_dir(run_dir)
-    validate_run(run)  # raises ContractValidationError on any violation
+    # NOTE (2026-07-14): engine's provenance/pas_ledger.tsv is being wired
+    # incrementally (atlas-snap drop site first; cb-filter/pas-gene/
+    # preprocess still pending per engine-team). Until every drop site is
+    # wired, rows(pas_ledger where dropped_at="") != n_vars(clusters.h5ad)
+    # by construction (D2-D7 drops aren't recorded yet), so we must NOT
+    # enforce that invariant here or every real run would fail indexing.
+    # Fixtures/contract-level tests keep enforcing it (default True there);
+    # this is the one call site that's deliberately lenient for real runs.
+    validate_run(run, check_ledger_invariant=False)  # raises ContractValidationError on any OTHER violation
 
     pas_df = _pas_ledger_df(run_id, run)
     cell_df = _cell_ledger_df(run_id, run)

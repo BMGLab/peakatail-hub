@@ -278,10 +278,15 @@ class GeneCounts:
     n_cells: int
 
 
-def validate_run(run: Run) -> None:
+def validate_run(run: Run, *, check_ledger_invariant: bool = True) -> None:
     """Thin wrapper around `peakatail_contract.validate()` that supplies the
     n_vars_clusters_h5ad invariant check from this Run's clusters.h5ad
-    (opened once, lazily, via `open_clusters_h5ad()`).
+    (opened once, lazily, via `open_clusters_h5ad()`), unless
+    `check_ledger_invariant=False` -- see the real `peakatail_io.validate_run`
+    docstring: engine's provenance ledger is being wired drop-site by
+    drop-site, so the invariant only holds once every drop site is wired.
+    Kept in sync with the real package's signature so `io_compat`'s
+    stub-fallback path stays a drop-in replacement.
 
     Raises `peakatail_contract.ContractValidationError` on any violation;
     callers (the indexer) are responsible for catching it per-run so one bad
@@ -293,5 +298,5 @@ def validate_run(run: Run) -> None:
         cell_ledger=run.cell_ledger(),
         findings=run.findings(),
         length_rows=run.length_rows(),
-        n_vars_clusters_h5ad=run.n_vars(),
+        n_vars_clusters_h5ad=run.n_vars() if check_ledger_invariant else None,
     )
