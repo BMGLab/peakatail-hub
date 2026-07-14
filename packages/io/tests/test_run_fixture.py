@@ -51,8 +51,10 @@ def test_pas_ledger(contract_run: Run):
     assert dropped_row.drop_reason == "no atlas hit within atlas_distance=100"
     assert dropped_row.gene_id == ""  # INTERGENIC / never assigned -> "" not None
     assert dropped_row.snap_distance_bp is None
-    # computed pas_uid field
-    assert survivor.pas_uid == "chr1:1000:+"
+    # computed pas_uid field: strand-aware 3'-summit position (E1, frozen
+    # 2026-07-14) is `end - 1` on `+` strand, not the raw BED `end` --
+    # start=999/end=1000/+ -> summit 999, per ids.pas_summit_pos.
+    assert survivor.pas_uid == "chr1:999:+"
 
 
 def test_cell_ledger(contract_run: Run):
