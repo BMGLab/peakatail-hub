@@ -81,15 +81,30 @@ export interface LengthRow {
 // names against their own manifest/Run models later.
 // ---------------------------------------------------------------------------
 
+/**
+ * Field names/types here MUST match `backend/src/peakatail_hub/schemas.py`'s
+ * `RunSummary` pydantic model exactly (GET /runs). This is NOT the run's
+ * `dataset_id`/`label` (a run may span >1 dataset -- see `n_datasets` /
+ * `stratum_to_label`) -- there is no single flat label; callers needing a
+ * display string derive one (see TopBar.tsx) rather than assuming a field
+ * that was never real (a prior interim version of this type had
+ * `dataset_id`/`label`/`created_at`/`n_samples` fields that do not exist on
+ * the backend response -- they were always `undefined` at runtime, which
+ * broke the Scope selector: `/datasets/undefined/umap` 404s).
+ */
 export interface RunSummary {
   run_id: string
-  dataset_id: string
-  label: string
+  root: string
   contract_version: string
-  created_at: string
-  n_samples: number
-  n_cells: number
-  n_pas: number
+  resolved_config: Record<string, unknown>
+  stratum_to_label: Record<string, string>
+  n_pas: number | null
+  n_cells: number | null
+  n_genes: number | null
+  n_datasets: number | null
+  n_findings: number | null
+  n_length_rows: number | null
+  indexed_at: string | null
 }
 
 export interface StageCount {

@@ -5,8 +5,22 @@ import { api } from '@lib/api/client'
 import { useScopeStore } from '@state/useScopeStore'
 import { useSelectionStore } from '@state/useSelectionStore'
 import { usePinStore } from '@state/usePinStore'
-import type { SearchResult } from '@lib/contract/types'
+import type { RunSummary, SearchResult } from '@lib/contract/types'
 import './TopBar.css'
+
+/**
+ * There is no flat `RunSummary.label` on the real backend response --
+ * derive a readable option string instead of assuming one exists. Prefers
+ * the manifest's resolved stratum labels (D10-safe, not a truncated
+ * directory name) when there's exactly one; otherwise falls back to the
+ * bare run_id plus a cell count for orientation.
+ */
+function runLabel(run: RunSummary): string {
+  const labels = Object.values(run.stratum_to_label)
+  if (labels.length === 1 && labels[0]) return labels[0]
+  const cells = run.n_cells != null ? `${run.n_cells.toLocaleString()} cells` : null
+  return cells ? `${run.run_id} (${cells})` : run.run_id
+}
 
 export function TopBar() {
   const navigate = useNavigate()
@@ -75,7 +89,16 @@ export function TopBar() {
           value={runId ?? ''}
           onChange={(e) => {
             const run = (runs ?? []).find((r) => r.run_id === e.target.value)
-            if (run) setScope(run.run_id, run.dataset_id)
+            // The backend's RunSummary has no single flat `dataset_id`/
+            // `label` (a run can span n_datasets > 1 -- see
+            // `stratum_to_label`). The scope's "datasetId" is really "which
+            // run" as far as the UMAP/QC endpoints are concerned (spec: GET
+            // /datasets/{run_id}/umap takes the RUN id in that path slot,
+            // an optional `?dataset_id=` narrows further within it, no UI
+            // for that yet) -- run_id in both slots, not `run.dataset_id`
+            // (that field never existed on the real response; every view
+            // gated on scope silently 404'd on `/datasets/undefined/...`).
+            if (run) setScope(run.run_id, run.run_id)
           }}
         >
           <option value="" disabled>
@@ -83,7 +106,7 @@ export function TopBar() {
           </option>
           {(runs ?? []).map((r) => (
             <option key={r.run_id} value={r.run_id}>
-              {r.label}
+              {runLabel(r)}
             </option>
           ))}
         </select>
