@@ -28,3 +28,6 @@ frontend/.vite/
 .vscode/
 .idea/
 *.swp
+
+# Local verification artifacts (screenshots, scratch output)
+scratch/

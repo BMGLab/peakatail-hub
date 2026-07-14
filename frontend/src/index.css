@@ -1,23 +1,7 @@
-:root {
-  --bg: #0f1115;
-  --bg-elevated: #171a21;
-  --bg-hover: #1f232c;
-  --border: #2a2e38;
-  --text: #d7dae0;
-  --text-dim: #8a8f9c;
-  --text-h: #f5f6f8;
-  --accent: #5b9dff;
-  --accent-dim: rgba(91, 157, 255, 0.15);
-  --warn: #f0a63d;
-  --warn-bg: rgba(240, 166, 61, 0.14);
-  --danger: #e5484d;
-  --danger-bg: rgba(229, 72, 77, 0.14);
-  --ok: #4cc38a;
-  --radius: 6px;
-  --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, SFMono-Regular, Consolas, monospace;
-  color-scheme: dark;
-}
+/* Design tokens are the SINGLE source of truth — app/theme/tokens.css.
+   The @import MUST remain the first statement in this file. Do not re-declare
+   token values here; add new tokens in tokens.css instead. */
+@import './app/theme/tokens.css';
 
 * {
   box-sizing: border-box;
@@ -31,10 +15,13 @@ body,
 
 body {
   margin: 0;
-  font-family: var(--font);
-  background: var(--bg);
-  color: var(--text);
-  font-size: 14px;
+  font-family: var(--font-sans);
+  background: var(--bg-page);
+  color: var(--ink-body);
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 button {
@@ -48,8 +35,28 @@ select {
   font-size: inherit;
 }
 
+/* Native form controls (checkboxes, radios, range sliders, progress) adopt the
+   brand teal instead of the browser-default blue. */
+input,
+select,
+progress {
+  accent-color: var(--accent);
+}
+
 a {
   color: var(--accent);
+}
+
+a:hover {
+  color: var(--accent-strong);
+}
+
+/* Brand wordmark — pair with the logo mark in the top bar. */
+.brand-wordmark {
+  font-family: var(--font-brand);
+  font-weight: var(--fw-semibold);
+  color: var(--ink);
+  letter-spacing: 0.01em;
 }
 
 .badge {
@@ -86,6 +93,33 @@ a {
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: var(--radius);
+  box-shadow: 0 1px 2px rgba(16, 20, 28, 0.04);
+}
+
+.mono {
+  font-family: var(--mono);
+}
+
+/* Truncate a table cell to its column width but keep the full value
+   reachable via the native tooltip -- callers pass the full string as
+   both the text content and the `title` attribute. */
+.truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: block;
+}
+
+.badge--ok {
+  background: var(--ok-tint);
+  color: var(--ok);
+  border: 1px solid rgba(47, 133, 90, 0.32);
+}
+
+.badge--accent {
+  background: var(--accent-tint);
+  color: var(--accent-strong);
+  border: 1px solid var(--accent-line);
 }
 
 .state-message {
@@ -96,4 +130,76 @@ a {
 
 .state-message--error {
   color: var(--danger);
+}
+
+/* ---------------------------------------------------------------------------
+   Global utilities — tabular numerals + readable data tables.
+   Import tokens.css gives every view these; use them instead of re-styling.
+   --------------------------------------------------------------------------- */
+
+/* Tabular, monospace-aligned numbers. Apply to any numeric / coordinate cell.
+   Genomic coordinates, q-values, deltas, counts. */
+.num {
+  font-family: var(--font-mono);
+  font-feature-settings: var(--num-feat);
+  font-variant-numeric: tabular-nums lining-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* Focus visibility — every interactive element inherits a consistent ring. */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: var(--radius-sm);
+}
+
+/* Readable data table. Columns size to content; text left, numbers right.
+   Horizontal rules only (recommended for dense scientific data). Truncation
+   is opt-IN per column via `.truncate`, never the default. */
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-small);
+  font-variant-numeric: tabular-nums;
+}
+
+.data-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-sticky);
+  background: var(--bg-sunken);
+  color: var(--ink-muted);
+  font-weight: var(--fw-semibold);
+  text-align: left;
+  white-space: nowrap;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--line-strong);
+}
+
+.data-table tbody td {
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--line-faint);
+  vertical-align: baseline;
+}
+
+.data-table tbody tr:hover {
+  background: var(--bg-hover);
+}
+
+.data-table th.num,
+.data-table td.num {
+  text-align: right;
+}
+
+.data-table th.col-id,
+.data-table td.col-id {
+  font-family: var(--font-mono);
+  color: var(--ink-body);
+  white-space: nowrap;
+}
+
+/* Zebra is optional; horizontal rules are the default separator. */
+.data-table--zebra tbody tr:nth-child(even) {
+  background: var(--bg-page);
 }
