@@ -107,16 +107,28 @@ export interface RunSummary {
   indexed_at: string | null
 }
 
-export interface StageCount {
+/** Matches backend schemas.py `QcStageStat` (`/runs/{id}/qc`'s per-stage drop counts). */
+export interface QcStageStat {
   stage: string
-  n_pas: number
-  n_cells: number
+  dropped: number
 }
 
+/**
+ * Matches backend schemas.py `QcFunnel` exactly -- NOT the earlier interim
+ * shape (`stages: StageCount[]` + `config_diff`), which never existed on
+ * the real response. Config-diff is a roadmap item (spec §7d: gated on B0 +
+ * E2), there is no `config_diff` field yet.
+ */
 export interface RunQc {
   run_id: string
-  stages: StageCount[]
-  config_diff: Record<string, { resolved: unknown; default: unknown }> | null
+  n_pas_total: number
+  n_pas_survived: number
+  n_cells_total: number
+  n_cells_survived: number
+  pas_drop_by_stage: QcStageStat[]
+  cell_drop_by_stage: QcStageStat[]
+  per_sample_stats_available: boolean
+  gate_note: string
 }
 
 export interface GeneSummary {
@@ -162,17 +174,33 @@ export interface UmapPoint {
   sample: string | null
 }
 
-export interface ConcordanceSummary {
-  pair: string
-  ari: number
-  ami: number
+/**
+ * Matches backend schemas.py `StubResponse` -- both `/concordance` and
+ * `/benchmarks` return exactly this shape (a single object, not an array of
+ * per-pair/per-metric rows) because no contract schema exists yet for
+ * either artifact type; `available` is always `false` today. The earlier
+ * `ConcordanceSummary`/`BenchmarkSummary` per-row shapes never matched a
+ * real response.
+ */
+export interface StubResponse {
+  run_id: string
+  available: boolean
+  note: string
 }
 
-export interface BenchmarkSummary {
-  name: string
-  metric: string
-  value: number
-  note: string | null
+/**
+ * Backend schemas.py `SearchResults` (`GET /search?q=`) returns three
+ * separately-typed arrays -- `{q, genes: [{gene_id}], pas: PasLedgerRow[],
+ * cells: CellLedgerRow[]}` -- not a unified `SearchResult[]`. `SearchResult`
+ * below is a frontend-only normalized shape the API client folds the three
+ * arrays into for TopBar's dropdown, kept for that UI convenience -- it is
+ * NOT what `fetchJson('/search', ...)` returns directly (see client.ts).
+ */
+export interface BackendSearchResults {
+  q: string
+  genes: { gene_id: string }[]
+  pas: PasLedgerRow[]
+  cells: CellLedgerRow[]
 }
 
 export interface SearchResult {

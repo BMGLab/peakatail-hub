@@ -2,9 +2,7 @@
 // Swap-out point: once the backend + packages/io land, lib/api/client.ts
 // functions below get real fetch bodies instead of these fixtures.
 import type {
-  BenchmarkSummary,
   CellDetail,
-  ConcordanceSummary,
   FindingRow,
   GeneSummary,
   GeneviewLayerData,
@@ -13,6 +11,7 @@ import type {
   RunQc,
   RunSummary,
   SearchResult,
+  StubResponse,
   UmapPoint,
 } from '@lib/contract/types'
 
@@ -176,33 +175,48 @@ export const mockUmap: UmapPoint[] = Array.from({ length: 800 }, (_, i) => {
 export const mockRunQc: Record<string, RunQc> = {
   'run-laughney-2024-01': {
     run_id: 'run-laughney-2024-01',
-    stages: [
-      { stage: 'raw_reads', n_pas: 42000, n_cells: 52000 },
-      { stage: 'ip_filter', n_pas: 35100, n_cells: 52000 },
-      { stage: 'annot_filter', n_pas: 28900, n_cells: 52000 },
-      { stage: 'atlas_snap', n_pas: 22400, n_cells: 52000 },
-      { stage: 'matrixfilter', n_pas: 20100, n_cells: 49800 },
-      { stage: 'clustering', n_pas: 19300, n_cells: 48900 },
-      { stage: 'switch_diff', n_pas: 18422, n_cells: 48213 },
+    n_pas_total: 42000,
+    n_pas_survived: 18422,
+    n_cells_total: 52000,
+    n_cells_survived: 48213,
+    pas_drop_by_stage: [
+      { stage: 'atlas_snap', dropped: 6500 },
+      { stage: 'coord_merge', dropped: 900 },
+      { stage: 'matrix_concat', dropped: 0 },
+      { stage: 'cb_filter', dropped: 0 },
+      { stage: 'pas_gene_assignment', dropped: 12800 },
+      { stage: 'preprocess', dropped: 2600 },
+      { stage: 'marker_subset', dropped: 778 },
     ],
-    config_diff: {
-      min_reads_per_pas: { resolved: 5, default: 3 },
-      max_distance_bp: { resolved: 200, default: 100 },
-    },
+    cell_drop_by_stage: [
+      { stage: 'atlas_snap', dropped: 0 },
+      { stage: 'coord_merge', dropped: 0 },
+      { stage: 'matrix_concat', dropped: 0 },
+      { stage: 'cb_filter', dropped: 2200 },
+      { stage: 'pas_gene_assignment', dropped: 0 },
+      { stage: 'preprocess', dropped: 900 },
+      { stage: 'marker_subset', dropped: 687 },
+    ],
+    per_sample_stats_available: false,
+    gate_note: 'Per-dataset stage-entry counts require engine B5 (+E3); mock data for the frontend-only dev path.',
   },
 }
 
-export const mockConcordance: ConcordanceSummary[] = [
-  { pair: 'fisher vs nb_pairwise', ari: 0.71, ami: 0.68 },
-  { pair: 'fisher vs nb_multi', ari: 0.54, ami: 0.5 },
-  { pair: 'nb_pairwise vs nb_multi', ari: 0.62, ami: 0.59 },
-]
+export const mockConcordance: Record<string, StubResponse> = {
+  'run-laughney-2024-01': {
+    run_id: 'run-laughney-2024-01',
+    available: false,
+    note: 'No concordance (ARI/AMI) artifact schema exists in peakatail-contract yet; nothing to read.',
+  },
+}
 
-export const mockBenchmarks: BenchmarkSummary[] = [
-  { name: 'atlas precision (raw)', metric: 'precision', value: 1.0, note: 'circular — see research_noatlas_findings' },
-  { name: 'atlas precision (honest)', metric: 'precision', value: 0.25, note: 'de-duplicated against held-out atlas' },
-  { name: 'peak-width confound', metric: 'spearman', value: 1.0, note: 'strategy ranking confounded by peak width' },
-]
+export const mockBenchmarks: Record<string, StubResponse> = {
+  'run-laughney-2024-01': {
+    run_id: 'run-laughney-2024-01',
+    available: false,
+    note: 'No benchmark artifact schema exists in peakatail-contract yet; nothing to read.',
+  },
+}
 
 export function mockSearch(q: string): SearchResult[] {
   const query = q.trim().toLowerCase()

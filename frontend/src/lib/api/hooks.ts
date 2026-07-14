@@ -107,12 +107,20 @@ export function useUmap(datasetId: string | null, params?: { color?: string; bbo
   })
 }
 
-export function useConcordance() {
-  return useQuery({ queryKey: ['concordance'], queryFn: api.getConcordance })
+export function useConcordance(runId: string | null) {
+  return useQuery({
+    queryKey: ['concordance', runId],
+    queryFn: () => api.getConcordance(runId!),
+    enabled: runId !== null,
+  })
 }
 
-export function useBenchmarks() {
-  return useQuery({ queryKey: ['benchmarks'], queryFn: api.getBenchmarks })
+export function useBenchmarks(runId: string | null) {
+  return useQuery({
+    queryKey: ['benchmarks', runId],
+    queryFn: () => api.getBenchmarks(runId!),
+    enabled: runId !== null,
+  })
 }
 
 export function useSearch(q: string) {

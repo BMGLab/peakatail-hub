@@ -8,9 +8,8 @@
 // `if (USE_MOCKS)` branches below — the real branch is stubbed with a
 // `fetchJson` helper ready to point at the API base URL).
 import type {
-  BenchmarkSummary,
+  BackendSearchResults,
   CellDetail,
-  ConcordanceSummary,
   FindingRow,
   GeneSummary,
   GeneviewLayerData,
@@ -18,6 +17,7 @@ import type {
   RunQc,
   RunSummary,
   SearchResult,
+  StubResponse,
   UmapPoint,
 } from '@lib/contract/types'
 import {
@@ -225,23 +225,43 @@ export const api = {
     return fetchJson(`/cells/${id}/provenance`)
   },
 
-  getUmap(_datasetId: string, _params?: { color?: string; bbox?: [number, number, number, number]; lod?: number }): Promise<UmapPoint[]> {
+  getUmap(_datasetId: string, params?: { color?: string; bbox?: [number, number, number, number]; lod?: number }): Promise<UmapPoint[]> {
     if (USE_MOCKS) return delay(mockUmap)
-    return fetchJson(`/datasets/${_datasetId}/umap`)
+    // Backend wraps points in `{run_id, color, n_points, points}` (schemas.py
+    // UmapResponse), not a bare array -- and 501s with a structured
+    // `{available:false,...}` body (not `points`) when `color` isn't gated
+    // in yet (spec §7c: celltype/stage/sample need engine A1/A2/B2/B7).
+    return fetchJson<{ points?: UmapPoint[]; available?: false }>(`/datasets/${_datasetId}/umap`, {
+      color: params?.color,
+    }).then((r) => r.points ?? [])
   },
 
-  getConcordance(): Promise<ConcordanceSummary[]> {
-    if (USE_MOCKS) return delay(mockConcordance)
-    return fetchJson('/concordance')
+  // Backend's `run_id` query param is REQUIRED on both of these (no
+  // contract schema for either artifact exists yet, spec §5.5 -- the
+  // response is always a single `{run_id, available: false, note}` stub,
+  // never a per-pair/per-metric array; the earlier ConcordanceSummary[]/
+  // BenchmarkSummary[] return types never matched a real response and
+  // omitting run_id 422'd every call).
+  getConcordance(runId: string): Promise<StubResponse> {
+    if (USE_MOCKS) return delay(mockConcordance[runId] ?? { run_id: runId, available: false, note: 'no mock data for this run' })
+    return fetchJson('/concordance', { run_id: runId })
   },
 
-  getBenchmarks(): Promise<BenchmarkSummary[]> {
-    if (USE_MOCKS) return delay(mockBenchmarks)
-    return fetchJson('/benchmarks')
+  getBenchmarks(runId: string): Promise<StubResponse> {
+    if (USE_MOCKS) return delay(mockBenchmarks[runId] ?? { run_id: runId, available: false, note: 'no mock data for this run' })
+    return fetchJson('/benchmarks', { run_id: runId })
   },
 
   search(q: string): Promise<SearchResult[]> {
     if (USE_MOCKS) return delay(mockSearch(q), 60)
-    return fetchJson('/search', { q })
+    // Backend returns three separately-typed arrays (`{q, genes, pas,
+    // cells}`, schemas.py SearchResults), not a unified SearchResult[] --
+    // fold them into the frontend's normalized shape here, the one place
+    // that needs to know about the wire format.
+    return fetchJson<BackendSearchResults>('/search', { q }).then((r) => [
+      ...r.genes.map((g) => ({ kind: 'gene' as const, id: g.gene_id, label: g.gene_id, sublabel: null })),
+      ...r.pas.map((p) => ({ kind: 'pas' as const, id: p.pas_uid, label: p.pas_uid, sublabel: p.gene_id || null })),
+      ...r.cells.map((c) => ({ kind: 'cell' as const, id: c.cell_uid, label: c.cell_uid, sublabel: c.dataset_id })),
+    ])
   },
 }
