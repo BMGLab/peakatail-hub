@@ -175,6 +175,21 @@ interface BackendGeneviewData {
   gates: string[]
 }
 
+// `/pas/{id}` and `/pas/{id}/provenance`'s `.pas` both serialize
+// PasLedgerRow directly (same fields as the contract model, pas_uid
+// computed) -- no gene_name/per_cluster_counts/umi_deduplicated, the
+// PasDetail-only additions.
+type BackendPasLedgerRow = Omit<PasDetail, 'gene_name' | 'per_cluster_counts' | 'umi_deduplicated'>
+
+function toFrontendPasDetail(p: BackendPasLedgerRow): PasDetail {
+  return {
+    ...p,
+    gene_name: null, // no Ensembl-id -> symbol mapping in the contract yet
+    per_cluster_counts: {}, // not carried by either PAS endpoint (spec §7a heavy-import split)
+    umi_deduplicated: false,
+  }
+}
+
 export const api = {
   getRuns(): Promise<RunSummary[]> {
     if (USE_MOCKS) return delay(mockRuns)
@@ -285,22 +300,38 @@ export const api = {
       }
       return delay(null)
     }
-    return fetchJson(`/pas/${id}`)
+    // /pas/{id} returns a plain PasLedgerRow (schemas.py response_model) --
+    // no gene_name/per_cluster_counts/umi_deduplicated, the PasDetail-only
+    // fields. Fill them in the same way getPasProvenance does below.
+    return fetchJson<BackendPasLedgerRow>(`/pas/${id}`).then(toFrontendPasDetail).catch(() => null)
   },
 
   getPasProvenance(id: string): Promise<PasDetail | null> {
     if (USE_MOCKS) return api.getPas(id)
-    return fetchJson(`/pas/${id}/provenance`)
+    // /pas/{id}/provenance wraps it in {pas, findings, length_rows, trail}
+    // (schemas.py PasProvenance) -- not a flat PasDetail. Unwrap `.pas`;
+    // findings/length_rows/trail aren't surfaced by AuditView today (it
+    // only needs the ledger row + StageStepper), left for a future pass.
+    return fetchJson<{ pas: BackendPasLedgerRow }>(`/pas/${id}/provenance`)
+      .then((r) => toFrontendPasDetail(r.pas))
+      .catch(() => null)
   },
 
   getCell(id: string): Promise<CellDetail | null> {
     if (USE_MOCKS) return delay(mockCells.find((c) => c.cell_uid === id) ?? null)
-    return fetchJson(`/cells/${id}`)
+    return fetchJson<CellDetail>(`/cells/${id}`)
+      .then((c) => ({ ...c, celltype: null }))
+      .catch(() => null)
   },
 
   getCellProvenance(id: string): Promise<CellDetail | null> {
     if (USE_MOCKS) return api.getCell(id)
-    return fetchJson(`/cells/${id}/provenance`)
+    // /cells/{id}/provenance wraps it in {cell, length_rows, trail}
+    // (schemas.py CellProvenance) -- unwrap `.cell`. `celltype` is always
+    // null: not populated until engine A1 (+A2/B2), spec §7c.
+    return fetchJson<{ cell: CellDetail }>(`/cells/${id}/provenance`)
+      .then((r) => ({ ...r.cell, celltype: null }))
+      .catch(() => null)
   },
 
   getUmap(_datasetId: string, params?: { color?: string; bbox?: [number, number, number, number]; lod?: number }): Promise<UmapPoint[]> {
