@@ -1,0 +1,1 @@
+\n# Python\n__pycache__/\n*.py[cod]\n*.egg-info/\n.eggs/\n.venv/\nvenv/\n.pytest_cache/\n.mypy_cache/\n.ruff_cache/\ndist/\nbuild/\n\n# Node / frontend\nnode_modules/\nfrontend/dist/\nfrontend/.vite/\n\n# uv\n.uv/\n\n# Hub runtime\n.peakatail-hub/\n*.duckdb\n\n# OS / editor\n.DS_Store\n.vscode/\n.idea/\n*.swp\n
