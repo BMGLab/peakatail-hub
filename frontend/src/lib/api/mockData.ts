@@ -102,7 +102,10 @@ export const mockLengths: LengthRow[] = Array.from({ length: 120 }, (_, i) => {
     cell_uid: `cell-${(i % 40).toString().padStart(4, '0')}`,
     canonical_cluster: clusters[i % clusters.length]!,
     value: seeded(i, 7) * 2 - 1,
-    direction: strategy === 'proportion' ? lengthDirections[i % lengthDirections.length]! : null,
+    // direction is populated for ALL strategies (engine 2026-07-14
+    // correction); shannon has no polarity axis -> always 'undetermined'.
+    direction: strategy === 'shannon' ? 'undetermined' : lengthDirections[i % lengthDirections.length]!,
+    direction_basis: 'structural',
     rank: strategy === 'proportion' ? (i % 40) + 1 : null,
   }
 })

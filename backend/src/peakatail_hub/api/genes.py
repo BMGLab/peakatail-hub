@@ -88,11 +88,14 @@ def geneview_data(
     gates: list[str] = []
     if finding_rows and all(r["celltype"] is None for r in finding_rows):
         gates.append("celltype facet/overlay gated on engine A1 (+A2/B2) -- not present on this run yet")
-    if any(r["strategy"] in ("classic", "shannon") for r in length_rows):
-        gates.append(
-            "length overlays for classic/shannon strategies have no per-PAS direction yet "
-            "(spec §7c: only 'proportion' is per-PAS directional today, E5-gated for the others)"
-        )
+    # NOTE (2026-07-14): engine now emits a real `direction` for ALL THREE
+    # length strategies (classic/proportion/shannon), not just 'proportion'
+    # -- see peakatail_contract.LengthRow.direction's docstring for the
+    # one-vs-rest structural methodology. The gate that used to fire here
+    # ("classic/shannon have no per-PAS direction yet") is stale and
+    # removed; only `pas_uid`/`rank` remain proportion-only (that part of
+    # the original design still holds, and needs no gate -- it's a grain
+    # difference, not a missing-data one).
 
     return GeneviewData(
         gene_id=gene_id,

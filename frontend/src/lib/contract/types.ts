@@ -69,7 +69,25 @@ export interface LengthRow {
   cell_uid: string
   canonical_cluster: string
   value: number
-  direction: 'shorten' | 'lengthen' | 'flat' | null
+  /**
+   * Engine correction (2026-07-14, ema/switch_test/long_output.py): now
+   * populated for ALL THREE strategies (a deterministic one-vs-rest
+   * structural call), not just `proportion` as originally documented --
+   * `shannon` has no polarity axis so it's always `'undetermined'`, never
+   * `null`. Still nullable in the type for tolerance with older engine
+   * outputs that predate this field. See `PasLedgerRow`-adjacent `Direction`
+   * usage elsewhere for the same 4-value enum (never a bare boolean).
+   */
+  direction: 'shorten' | 'lengthen' | 'flat' | 'undetermined' | null
+  /**
+   * Informational provenance for `direction`'s methodology (e.g.
+   * `'structural'` -- the one-vs-rest geometric call above -- vs. a future
+   * `'differential'` pairwise mode). Per spec §7e's caveat-flag philosophy,
+   * surface this wherever direction is shown rather than letting different
+   * methodologies look interchangeable. Optional/additive; not yet
+   * surfaced in any view -- tracked as a follow-up, not silently dropped.
+   */
+  direction_basis: string | null
   rank: number | null
 }
 

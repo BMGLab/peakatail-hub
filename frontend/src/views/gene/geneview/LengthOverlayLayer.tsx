@@ -14,14 +14,18 @@ const DIRECTION_MARK: Record<NonNullable<LengthRow['direction']>, string> = {
   shorten: '▾',
   lengthen: '▴',
   flat: '·',
+  undetermined: '?',
 }
 
 /**
  * `switch length` overlay: one sub-row per strategy (classic / proportion /
- * shannon); shorten/lengthen/flat direction (design §1.4). Per docs §7c, only
- * `proportion` is per-PAS (has a non-null pas_uid) -- classic/shannon are
- * per-cell/per-gene aggregates and are rendered as a summary badge instead of
- * per-PAS ticks until the engine change (E5) lands.
+ * shannon); shorten/lengthen/flat/undetermined direction (design §1.4).
+ * `direction` is populated for all three strategies (engine 2026-07-14
+ * correction) -- what's STILL proportion-only is `pas_uid`/`rank` (a grain
+ * difference: proportion is the only strategy with a per-PAS row; classic/
+ * shannon are per-cell/per-gene aggregates), which is why classic/shannon
+ * render as a summary badge instead of per-PAS ticks below. That's a design
+ * choice about row grain, not a gated/missing-data state.
  */
 export function LengthOverlayLayer({ scale, lengths, strategy, directionFilter, rowHeight = 24 }: LengthOverlayLayerProps) {
   const rows = lengths.filter((l) => l.strategy === strategy && (!directionFilter || l.direction === directionFilter))
@@ -31,7 +35,7 @@ export function LengthOverlayLayer({ scale, lengths, strategy, directionFilter, 
   if (aggregateOnly) {
     return (
       <div className="geneview-layer geneview-layer--length-overlay" data-strategy={strategy} style={{ height: rowHeight }}>
-        <span className="badge badge--neutral" title="classic/shannon length values are per-cell/per-gene, not per-PAS -- gated pending E5">
+        <span className="badge badge--neutral" title="classic/shannon length values are per-cell/per-gene, not per-PAS -- a row-grain difference, not missing data">
           length: {strategy} (aggregate only, {rows.length} cells)
         </span>
       </div>
