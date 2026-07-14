@@ -1,0 +1,67 @@
+.gene-view {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.gene-view__header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.gene-view__header h2 {
+  margin: 0;
+  color: var(--text-h);
+}
+
+.gene-view__body {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.gene-view__main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.gene-view__companions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.gene-view__companion {
+  padding: 12px;
+}
+
+.gene-view__companion h4 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--text-h);
+}
+
+.gene-view__chart {
+  height: 220px;
+}
+
+.gene-view__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+
+.gene-view__table th,
+.gene-view__table td {
+  text-align: left;
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.gene-view__table tbody tr:hover {
+  background: var(--bg-hover);
+}

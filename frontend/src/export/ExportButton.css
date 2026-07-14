@@ -1,0 +1,17 @@
+.export-button {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.export-button button {
+  padding: 4px 8px;
+  font-size: 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+}
+
+.export-button button:hover {
+  background: var(--bg-hover);
+}

@@ -1,0 +1,118 @@
+.findings-view {
+  display: flex;
+  gap: 16px;
+  height: 100%;
+}
+
+.findings-view__facets {
+  width: 220px;
+  flex-shrink: 0;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  height: fit-content;
+}
+
+.findings-view__facets h3 {
+  margin: 0 0 4px;
+  font-size: 13px;
+  color: var(--text-h);
+}
+
+.findings-view__facets label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.findings-view__facets select,
+.findings-view__facets input {
+  padding: 4px 6px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+}
+
+.findings-view__table-wrap {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.findings-view__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.findings-view__toolbar button {
+  padding: 4px 10px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text);
+}
+
+.findings-view__toolbar button:disabled {
+  opacity: 0.5;
+}
+
+.findings-view__scroll {
+  flex: 1;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.findings-view__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.findings-view__table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--bg-elevated);
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  z-index: 1;
+}
+
+.findings-view__table tbody td {
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.findings-view__table tbody tr {
+  cursor: pointer;
+}
+
+.findings-view__table tbody tr:hover {
+  background: var(--bg-hover);
+}
+
+.findings-view__select-col {
+  width: 28px;
+}
+
+.findings-view__flags {
+  display: flex;
+  gap: 4px;
+}
+
+.mono {
+  font-family: var(--mono);
+}

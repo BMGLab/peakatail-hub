@@ -1,0 +1,38 @@
+.qc-view {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+  gap: 16px;
+}
+
+.qc-view__section {
+  padding: 16px;
+}
+
+.qc-view__section h3 {
+  margin: 0 0 10px;
+  color: var(--text-h);
+  font-size: 13px;
+}
+
+.qc-view__funnel-chart {
+  height: 260px;
+  margin-bottom: 12px;
+}
+
+.qc-view__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.qc-view__table th,
+.qc-view__table td {
+  text-align: left;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.qc-view__note {
+  color: var(--text-dim);
+  font-style: italic;
+}

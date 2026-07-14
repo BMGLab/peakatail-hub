@@ -1,0 +1,118 @@
+.audit-view {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.audit-view__search {
+  padding: 16px;
+}
+
+.audit-view__search h3 {
+  margin: 0 0 6px;
+  color: var(--text-h);
+}
+
+.audit-view__search-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.audit-view__search-row label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.audit-view__search-row input {
+  padding: 4px 8px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  min-width: 220px;
+}
+
+.audit-view__search-row button {
+  padding: 5px 10px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text);
+}
+
+.audit-view__results {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.audit-view__trail {
+  padding: 16px;
+}
+
+.audit-view__trail h4 {
+  margin: 0 0 10px;
+  color: var(--text-h);
+}
+
+.audit-view__fields {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  margin: 0 0 16px;
+}
+
+.audit-view__fields dt {
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.audit-view__fields dd {
+  margin: 0;
+  font-size: 12px;
+}
+
+.audit-view__stepper {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.audit-view__step {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.audit-view__step-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--border);
+}
+
+.audit-view__step--survived .audit-view__step-dot {
+  background: var(--ok);
+}
+
+.audit-view__step--dropped .audit-view__step-dot {
+  background: var(--danger);
+}
+
+.audit-view__step--survived .audit-view__step-label {
+  color: var(--text);
+}
+
+.audit-view__step--dropped .audit-view__step-label {
+  color: var(--danger);
+}

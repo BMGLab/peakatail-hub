@@ -1,0 +1,36 @@
+.layer-panel {
+  width: 220px;
+  flex-shrink: 0;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.layer-panel h4 {
+  margin: 0 0 4px;
+  color: var(--text-h);
+}
+
+.layer-panel__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-dim);
+}
+
+.layer-panel__group {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.layer-panel__group legend {
+  color: var(--text-dim);
+  font-size: 11px;
+  padding: 0 4px;
+}
