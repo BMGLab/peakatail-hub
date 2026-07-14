@@ -66,13 +66,41 @@ export interface FindingsParams {
   utr_class?: string
   q_max?: number
   min_reads?: number
-  cursor?: number
+  // Opaque cursor (base64-encoded offset), per the backend's
+  // store/queries.py encode_cursor/decode_cursor. `undefined` means "first
+  // page" -- never send a literal 0, decode_cursor() base64-decodes
+  // whatever it's given.
+  cursor?: string
   limit?: number
 }
 
 export interface FindingsPage {
   rows: FindingRow[]
-  nextCursor: number | null
+  nextCursor: string | null
+  total: number
+}
+
+// Backend's actual /findings response shape (schemas.py FindingsPage):
+// snake_case, `items` not `rows`. Translated to the FindingsPage above
+// immediately after fetch so every other module in the frontend only ever
+// sees the mock-compatible shape.
+interface BackendFindingsPage {
+  items: FindingRow[]
+  next_cursor: string | null
+  total: number
+}
+
+interface BackendFacetValue {
+  value: string | null
+  count: number
+}
+
+interface BackendFindingsFacets {
+  arm: BackendFacetValue[]
+  strategy: BackendFacetValue[]
+  celltype: BackendFacetValue[]
+  direction: BackendFacetValue[]
+  utr_class: BackendFacetValue[]
   total: number
 }
 
@@ -106,16 +134,19 @@ export const api = {
       if (params.q_max !== undefined) rows = rows.filter((r) => r.qvalue <= params.q_max!)
       if (params.min_reads !== undefined) rows = rows.filter((r) => r.n_reads >= params.min_reads!)
       const total = rows.length
-      const cursor = params.cursor ?? 0
+      const offset = params.cursor ? Number(params.cursor) : 0
       const limit = params.limit ?? 100
-      const page = rows.slice(cursor, cursor + limit)
-      const nextCursor = cursor + limit < total ? cursor + limit : null
+      const page = rows.slice(offset, offset + limit)
+      const nextOffset = offset + limit
+      const nextCursor = nextOffset < total ? String(nextOffset) : null
       return delay({ rows: page, nextCursor, total })
     }
-    return fetchJson('/findings', params as Record<string, string | number | undefined>)
+    return fetchJson<BackendFindingsPage>('/findings', params as Record<string, string | number | undefined>).then(
+      (page) => ({ rows: page.items, nextCursor: page.next_cursor, total: page.total }),
+    )
   },
 
-  getFindingsFacets(_params: FindingsParams): Promise<FindingsFacets> {
+  getFindingsFacets(params: FindingsParams): Promise<FindingsFacets> {
     if (USE_MOCKS) {
       const uniq = (xs: (string | null)[]) => Array.from(new Set(xs.filter((x): x is string => x !== null)))
       return delay({
@@ -126,7 +157,23 @@ export const api = {
         utr_class: uniq(mockFindings.map((r) => r.utr_class)),
       })
     }
-    return fetchJson('/findings/facets')
+    // Facets are computed over the currently-applied filters (true full-set
+    // counts, spec §3 "not counts of the current page") -- forward every
+    // filter param except pagination (cursor/limit have no meaning here).
+    const { cursor: _cursor, limit: _limit, ...facetParams } = params
+    return fetchJson<BackendFindingsFacets>(
+      '/findings/facets',
+      facetParams as Record<string, string | number | undefined>,
+    ).then((f) => {
+      const values = (xs: BackendFacetValue[]) => xs.map((x) => x.value).filter((v): v is string => v !== null)
+      return {
+        arm: values(f.arm),
+        strategy: values(f.strategy),
+        celltype: values(f.celltype),
+        direction: values(f.direction),
+        utr_class: values(f.utr_class),
+      }
+    })
   },
 
   getFinding(id: string): Promise<FindingRow | null> {

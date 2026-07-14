@@ -71,7 +71,13 @@ export function FindingsView() {
   })
 
   function updateFilter<K extends keyof FindingsParams>(key: K, value: FindingsParams[K]) {
-    setFilters((prev) => ({ ...prev, [key]: value, cursor: 0 }))
+    setFilters((prev) => {
+      // exactOptionalPropertyTypes: reset to "first page" by omitting
+      // `cursor` entirely, never `cursor: undefined` (the backend's opaque
+      // cursor type has no "explicitly present but empty" state).
+      const { cursor: _cursor, ...rest } = prev
+      return { ...rest, [key]: value }
+    })
   }
 
   function toggleSelected(row: FindingRow) {
@@ -197,12 +203,23 @@ export function FindingsView() {
           </button>
         </div>
 
-        {findingsQuery.isLoading && <LoadingState label="Loading findings…" />}
-        {findingsQuery.isError && <ErrorState error={findingsQuery.error} onRetry={() => findingsQuery.refetch()} />}
-        {findingsQuery.isSuccess && rows.length === 0 && <EmptyState reason="no-match" />}
+        {/*
+          The scroll container is ALWAYS mounted (never gated behind
+          findingsQuery.isSuccess) so `parentRef` is attached to a real DOM
+          node from first render. useVirtualizer's ResizeObserver attaches
+          to whatever `getScrollElement()` returns at mount time; if this
+          div only appeared once data loaded, the observer would never see
+          it and getVirtualItems() would stay stuck at [] forever even
+          though getTotalSize() (which only needs `count`, not a live
+          measurement) looked correct -- exactly the "showing N" but zero
+          rendered <tr>s bug this fixes.
+        */}
+        <div ref={parentRef} className="findings-view__scroll">
+          {findingsQuery.isLoading && <LoadingState label="Loading findings…" />}
+          {findingsQuery.isError && <ErrorState error={findingsQuery.error} onRetry={() => findingsQuery.refetch()} />}
+          {findingsQuery.isSuccess && rows.length === 0 && <EmptyState reason="no-match" />}
 
-        {findingsQuery.isSuccess && rows.length > 0 && (
-          <div ref={parentRef} className="findings-view__scroll">
+          {findingsQuery.isSuccess && rows.length > 0 && (
             <table className="findings-view__table">
               <thead>
                 {table.getHeaderGroups().map((hg) => (
@@ -245,8 +262,8 @@ export function FindingsView() {
                 })}
               </tbody>
             </table>
-          </div>
-        )}
+          )}
+        </div>
       </section>
     </div>
   )
