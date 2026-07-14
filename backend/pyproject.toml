@@ -1,0 +1,63 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "peakatail-hub"
+version = "0.1.0"
+description = "FastAPI + DuckDB read-only analyst cockpit backend for exploring PeakATail pipeline results."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [{ name = "PeakATail / peakatail-hub" }]
+classifiers = [
+  "Programming Language :: Python :: 3.12",
+  "Intended Audience :: Science/Research",
+]
+
+# Runtime deps stay dep-light per spec §7a: FastAPI/DuckDB/pydantic + the
+# contract package are cheap. peakatail-io (the heavy h5ad/anndata reader)
+# is depended on too, but peakatail_hub only imports it lazily on the ONE
+# path documented in io_compat.py / routers/genes.py (`/genes/{id}/counts`)
+# plus the indexer's clusters.h5ad extraction step.
+dependencies = [
+  "fastapi>=0.110",
+  "uvicorn[standard]>=0.29",
+  "duckdb>=1.0",
+  "pydantic>=2,<3",
+  "pyarrow>=16",
+  "pandas>=2",
+  "peakatail-contract",
+  # packages/io/ has landed (real Run/validate_run facade, spec §7a); depend
+  # on it directly now -- io_compat.py's `try: from peakatail_io import ...`
+  # succeeds first and backend/src/peakatail_hub/io_stub/ is no longer
+  # imported by anything (kept only as a documented fallback for a checkout
+  # that hasn't `uv sync`'d packages/io yet).
+  "peakatail-io",
+]
+
+[project.optional-dependencies]
+test = [
+  "pytest>=8",
+  "httpx>=0.27",
+  "anndata>=0.10",
+  "h5py>=3.10",
+  "numpy>=1.26",
+]
+dev = [
+  "peakatail-hub[test]",
+  "ruff>=0.6",
+]
+
+[project.scripts]
+hub = "peakatail_hub.cli:main"
+
+[tool.uv.sources]
+peakatail-contract = { path = "../packages/contract", editable = true }
+peakatail-io = { path = "../packages/io", editable = true }
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/peakatail_hub"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
