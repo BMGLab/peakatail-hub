@@ -399,8 +399,18 @@ class LengthRow(BaseModel):
     * ``shannon``: ``gene_id, cell, entropy, cluster``
 
     ``value`` holds pdui / proportion / entropy depending on ``strategy``.
-    Per spec §7c, only ``proportion`` is per-PAS directional today, so
-    ``pas_uid``/``rank``/``direction`` are only populated for that strategy.
+
+    CORRECTED (2026-07-14, engine-team `ema/switch_test/long_output.py`):
+    an earlier version of this docstring said only ``proportion`` carries a
+    per-row ``direction`` -- that's now stale. Engine emits a REAL
+    ``direction`` for ALL THREE strategies: a deterministic one-vs-rest
+    per-(gene, canonical_cluster) structural call (this gene's distal usage
+    in this cluster vs. the mean distal usage across the OTHER clusters in
+    the same length output; sign of delta -> lengthen/shorten/flat,
+    ``undetermined`` if the gene appears in <2 clusters or for ``shannon``,
+    which has no polarity axis). ``pas_uid``/``rank`` remain populated only
+    for ``proportion`` (the only strategy with a per-PAS row grain); that
+    part of the original design still holds.
     """
 
     strategy: LengthStrategy
@@ -422,9 +432,28 @@ class LengthRow(BaseModel):
     direction: Direction | None = Field(
         default=None,
         description=(
-            "Nullable: per spec §7c only the 'proportion' strategy carries a "
-            "per-PAS directional call today; classic/shannon are gene-level trend "
-            "measures without a per-row direction yet. Populate for proportion rows; "
-            "leave None for classic/shannon until the engine defines one."
+            "Populated for ALL strategies (engine 2026-07-14): a deterministic "
+            "one-vs-rest per-(gene, canonical_cluster) structural call -- this "
+            "gene's distal usage in this cluster vs. the mean distal usage "
+            "across the other clusters in the same length output. "
+            "'classic': value IS the distal fraction (pdui), used directly. "
+            "'proportion': distal PAS = max(rank) within the gene (proximal=0). "
+            "'shannon': always 'undetermined' (no polarity axis). Still "
+            "nullable in the type (Optional) for forward/backward tolerance "
+            "with older engine outputs that predate this field being wired, "
+            "but a conformant E5 writer should never actually leave it None."
+        ),
+    )
+    direction_basis: str | None = Field(
+        default=None,
+        description=(
+            "Informational provenance for `direction`'s methodology, e.g. "
+            "'structural' (the one-vs-rest geometric call above) vs. a future "
+            "'differential' (explicit pairwise subject-vs-named-reference-"
+            "cluster mode, not yet implemented -- no reference-cluster "
+            "convention is defined engine-side as of 2026-07-14). Surface this "
+            "in the UI wherever direction is shown, per the caveat-flag "
+            "philosophy (spec §7e) -- one-vs-rest and pairwise deltas are not "
+            "the same claim and should not look interchangeable to an analyst."
         ),
     )

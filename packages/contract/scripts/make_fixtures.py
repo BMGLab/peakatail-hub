@@ -206,7 +206,11 @@ for ds, barcode, *_rest, leiden in _CELL_SPECS:
         continue  # dropped cell, not in clusters.h5ad
     c_uid = cell_uid(ds, barcode)
     canon = _canonical_for(ds, leiden)
-    # classic: one row per gene per cell
+    # classic: one row per gene per cell. Engine (2026-07-14) now emits a
+    # REAL direction for classic too: one-vs-rest structural call, value
+    # (pdui = distal fraction) used directly -- cl_A's 0.62 > cl_B's 0.41
+    # (the "rest"), so cl_A is relatively LENGTHENED and cl_B relatively
+    # SHORTENED. See LengthRow.direction docstring.
     for gene in (GENE_1, GENE_2):
         length_rows.append(
             LengthRow(
@@ -216,9 +220,13 @@ for ds, barcode, *_rest, leiden in _CELL_SPECS:
                 cell_uid=c_uid,
                 canonical_cluster=canon,
                 value=0.62 if canon == "cl_A" else 0.41,
+                direction=Direction.LENGTHEN if canon == "cl_A" else Direction.SHORTEN,
+                direction_basis="structural",
             )
         )
-    # shannon: one row per cell (gene-agnostic entropy over all its PAS)
+    # shannon: one row per cell (gene-agnostic entropy over all its PAS).
+    # Engine: shannon has no polarity axis -> direction is ALWAYS
+    # 'undetermined' (never None -- see LengthRow.direction docstring).
     length_rows.append(
         LengthRow(
             strategy=LengthStrategy.SHANNON,
@@ -226,6 +234,8 @@ for ds, barcode, *_rest, leiden in _CELL_SPECS:
             cell_uid=c_uid,
             canonical_cluster=canon,
             value=0.87 if canon == "cl_A" else 0.55,
+            direction=Direction.UNDETERMINED,
+            direction_basis="structural",
         )
     )
     # proportion: one row per surviving PAS for GENE_1, per cell
@@ -242,6 +252,7 @@ for ds, barcode, *_rest, leiden in _CELL_SPECS:
                 pas_uid=pas_row.pas_uid,
                 rank=rank,
                 direction=Direction.SHORTEN if canon == "cl_A" else Direction.LENGTHEN,
+                direction_basis="structural",
             )
         )
 
