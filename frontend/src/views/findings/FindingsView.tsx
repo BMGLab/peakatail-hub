@@ -1,9 +1,10 @@
-import { useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useRef, useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { createColumnHelper, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { useFindings, useFindingsFacets } from '@lib/api/hooks'
 import type { FindingsParams } from '@lib/api/client'
+import { useScopeStore } from '@state/useScopeStore'
 import { useSelectionStore } from '@state/useSelectionStore'
 import { usePinStore } from '@state/usePinStore'
 import type { FindingRow } from '@lib/contract/types'
@@ -105,11 +106,32 @@ const columns = [
 ]
 
 export function FindingsView() {
-  const [filters, setFilters] = useState<FindingsParams>({ limit: 200 })
+  const runId = useScopeStore((s) => s.runId)
+  // Deep-link support: ResultsView (Cell Types) links here as
+  // `/findings?celltype=<CELLTYPE>` to show "genes switching in this
+  // celltype" -- read it once on mount as the initial filter (a user who
+  // then clears/changes the celltype facet dropdown isn't fighting the URL
+  // on every subsequent render).
+  const [searchParams] = useSearchParams()
+  const initialCelltype = searchParams.get('celltype') ?? undefined
+
+  const [filters, setFilters] = useState<FindingsParams>({ limit: 200, run_id: runId ?? undefined, celltype: initialCelltype })
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const navigate = useNavigate()
   const select = useSelectionStore((s) => s.select)
   const pin = usePinStore((s) => s.pin)
+
+  // FIX: this view previously never scoped to the active run at all -- with
+  // >1 run indexed (the real deployment has 19), it silently mixed every
+  // run's findings together. Re-scope (and reset to page 1, same as any
+  // other filter change) whenever the TopBar Scope selector's run changes.
+  useEffect(() => {
+    setFilters((prev) => {
+      const { cursor: _cursor, ...rest } = prev
+      return { ...rest, run_id: runId ?? undefined }
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runId])
 
   const facetsQuery = useFindingsFacets(filters)
   const findingsQuery = useFindings(filters)

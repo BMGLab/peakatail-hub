@@ -6,13 +6,14 @@ import { renderWithProviders } from '../../test/testUtils'
 import { GeneView } from './GeneView'
 import { useScopeStore } from '@state/useScopeStore'
 
-// GeneView embeds the REAL ema geneview output (an <iframe>/<img> pointed at
-// backend file-serving endpoints, see geneviewHtmlUrl/geneviewPngUrl in
-// lib/api/client.ts) -- there is no client-side track rendering left to unit
-// test (that's the whole point of the 2026-08-14 fix, replacing the old
-// hand-rolled canvas). These tests cover what IS still real frontend logic:
-// the gene header, the plotly/matplotlib toggle, the metadata + PAS-distance
-// table (from mockGeneviewMeta), and the "no run selected" guard.
+// GeneView is a generator panel for the REAL ema geneview output (an
+// <iframe>/<img> pointed at a separate host-side microservice via
+// geneviewRenderUrl, see lib/api/client.ts) -- there is no client-side track
+// rendering left to unit test (that's the whole point of the 2026-08-14
+// fix, replacing the old hand-rolled canvas). These tests cover what IS
+// real frontend logic: the gene header, the celltype/cluster-key/color-key/
+// distance-table controls, the plotly/matplotlib toggle, and the empty
+// states (no run selected, unknown gene).
 
 function renderGeneView(geneId: string) {
   return renderWithProviders(
@@ -30,7 +31,7 @@ describe('GeneView', () => {
     expect(screen.getByText(/select a run from the top bar scope selector first/i)).toBeInTheDocument()
   })
 
-  it('renders the gene header, engine toggle, and PAS-distance table once a run is scoped', async () => {
+  it('renders the gene header, generator controls, and defaults the cell type once a run is scoped', async () => {
     useScopeStore.setState({ runId: 'fixture-run-0001', datasetId: 'ds1' })
     renderGeneView('ENSG00000141510')
 
@@ -41,13 +42,17 @@ describe('GeneView', () => {
     expect(screen.getByRole('button', { name: /plotly \(interactive\)/i })).toHaveClass('gene-view__engine-btn--active')
     expect(screen.getByRole('button', { name: /matplotlib \(static\)/i })).not.toHaveClass('gene-view__engine-btn--active')
 
-    await waitFor(() => expect(screen.getByTitle(/TP53 geneview \(plotly\)/i)).toBeInTheDocument())
-    expect(screen.getByRole('heading', { name: /PAS-distance table/i })).toBeInTheDocument()
+    // Cell type defaults to the run's first switch-results celltype once it loads.
+    await waitFor(() => expect(screen.getByRole('combobox', { name: /cell type/i })).toHaveValue('Tumor epithelial'))
+    expect(screen.getByRole('combobox', { name: /cluster key/i })).toHaveValue('stage')
+    expect(screen.getByRole('checkbox', { name: /pas-distance table overlay/i })).toBeChecked()
+
+    await waitFor(() => expect(screen.getByTitle(/TP53 geneview \(plotly, Tumor epithelial\)/i)).toBeInTheDocument())
 
     const user = userEvent.setup()
     await user.click(screen.getByRole('button', { name: /matplotlib \(static\)/i }))
     expect(screen.getByRole('button', { name: /matplotlib \(static\)/i })).toHaveClass('gene-view__engine-btn--active')
-    expect(screen.getByAltText(/TP53 geneview \(matplotlib\)/i)).toBeInTheDocument()
+    expect(screen.getByAltText(/TP53 geneview \(matplotlib, Tumor epithelial\)/i)).toBeInTheDocument()
   })
 
   it('shows a not-indexed empty state for an unknown gene', async () => {

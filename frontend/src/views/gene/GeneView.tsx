@@ -1,46 +1,76 @@
-import { useState } from 'react'
-import { useParams } from 'react-router-dom'
-import { geneviewHtmlUrl, geneviewPngUrl } from '@lib/api/client'
-import { useGene, useGeneviewMeta } from '@lib/api/hooks'
+import { useEffect, useState } from 'react'
+import { useParams, useSearchParams } from 'react-router-dom'
+import { geneviewRenderUrl } from '@lib/api/client'
+import { useGene, useRunSwitch } from '@lib/api/hooks'
 import { useScopeStore } from '@state/useScopeStore'
 import { EmptyState, ErrorState, LoadingState } from '@views/shared/ViewStates'
 import './GeneView.css'
 
 type Engine = 'plotly' | 'matplotlib'
+type ClusterKey = 'stage' | 'leiden'
 
 /**
- * GeneView -- the REAL `ema switch geneview` output (2026-08-14), replacing
- * the previous hand-rolled IGV-style track canvas entirely. No part of the
- * gene track/coverage/isoform rendering happens client-side anymore: this
- * component asks the backend for the figure (generated on demand by a
- * host-side worker if not already cached, see backend/src/peakatail_hub/
- * geneview/ + geneview-worker/), then embeds whichever engine the user
- * picked -- an <iframe> for the interactive plotly figure (full PAS + cell
- * metadata on hover, a switchable per-cluster metric, the PAS-distance-table
- * overlay -- all baked in by ema itself), or an <img> for the static
- * matplotlib figure.
+ * GeneView -- a generator panel for the REAL `ema switch geneview` output
+ * (2026-08-14), replacing the previous hand-rolled IGV-style track canvas
+ * entirely. No gene track/coverage/isoform rendering happens client-side:
+ * every control here (engine, cluster_key, color_key, distance-table
+ * on/off) is forwarded as a query param to a separate host-side geneview
+ * microservice (geneview_svc.py, reached via a same-origin `/geneview/*`
+ * proxy -- see lib/api/client.ts's `geneviewRenderUrl` doc comment), which
+ * renders per (run, celltype, gene) on demand and caches. Plotly renders as
+ * a full interactive HTML document (all PAS + cell metadata on hover, a
+ * switchable per-cluster metric, the PAS-distance-table overlay baked in by
+ * ema itself) embedded via <iframe>; matplotlib is the static PNG
+ * equivalent via <img>.
+ *
+ * Cell type is now a REQUIRED part of the geneview's identity (PAS calling
+ * and the switch analysis are both per-celltype) -- reached via
+ * `?celltype=` (set when arriving from ResultsCelltypeView's gene tables)
+ * or picked from this panel's own dropdown, sourced from the run's real
+ * `GET /runs/{id}/switch` celltypes.
  */
 export function GeneView() {
   const { geneId } = useParams<{ geneId: string }>()
-  // The backend 400s `/genes/{id}`/`/genes/{id}/geneview/*` once more than
-  // one run is indexed unless `run_id` is passed -- thread the TopBar Scope
-  // selector's run through rather than assume there's exactly one run.
+  const [searchParams, setSearchParams] = useSearchParams()
+  // The backend 400s `/genes/{id}` once more than one run is indexed unless
+  // `run_id` is passed -- thread the TopBar Scope selector's run through.
   const runId = useScopeStore((s) => s.runId)
   const geneQuery = useGene(geneId ?? null, runId)
-  const [engine, setEngine] = useState<Engine>('plotly')
+  const switchQuery = useRunSwitch(runId)
 
-  // Triggers on-demand generation (blocks up to ~25s server-side on a cold
-  // cache; see useGeneviewMeta's doc comment) and gives us the metadata +
-  // distance table alongside confirmation the figure is ready. The iframe/
-  // img below are only rendered once this resolves, so they always hit an
-  // already-warm cache instead of racing a cold render with a blank/broken
-  // embed and no loading indicator.
-  const metaQuery = useGeneviewMeta(geneId ?? null, runId)
+  const [engine, setEngine] = useState<Engine>('plotly')
+  const [clusterKey, setClusterKey] = useState<ClusterKey>('stage')
+  const [colorKey, setColorKey] = useState('')
+  const [pasDistanceTable, setPasDistanceTable] = useState(true)
+  const [figureLoading, setFigureLoading] = useState(true)
+
+  const celltypes = (switchQuery.data?.celltypes ?? []).map((c) => c.celltype)
+  const celltype = searchParams.get('celltype') ?? celltypes[0] ?? null
+
+  // Default the URL's `celltype` to the run's first available one once the
+  // switch results load, if the panel was reached with none set (e.g.
+  // directly via search/locus jump rather than from ResultsCelltypeView).
+  useEffect(() => {
+    if (!searchParams.get('celltype') && celltypes[0]) {
+      const next = new URLSearchParams(searchParams)
+      next.set('celltype', celltypes[0])
+      setSearchParams(next, { replace: true })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [celltypes.join('|')])
+
+  // A new figure request (any control change, or navigating to a different
+  // gene) means the <iframe>/<img> below remounts (`key={renderUrl}`) and
+  // starts a fresh load -- reset the loading flag so the "generating..."
+  // message reappears instead of staying stuck on whatever the PREVIOUS
+  // figure's onLoad last set it to.
+  useEffect(() => {
+    setFigureLoading(true)
+  }, [geneId, celltype, engine, clusterKey, colorKey, pasDistanceTable])
 
   if (!geneId) {
     return <EmptyState reason="no-match" detail="No gene selected." />
   }
-
   // Mirrors QcView's own guard: the backend refuses to guess `run_id` once
   // more than one run is indexed, so a gene reached before any Scope is
   // picked would otherwise surface as a raw "run_id query param is
@@ -48,7 +78,6 @@ export function GeneView() {
   if (!runId) {
     return <EmptyState reason="no-match" detail="Select a run from the top bar scope selector first." />
   }
-
   if (geneQuery.isLoading) {
     return <LoadingState label={`Loading ${geneId}…`} />
   }
@@ -60,23 +89,73 @@ export function GeneView() {
   }
 
   const gene = geneQuery.data
-  const meta = metaQuery.data
+  const hasSpan = gene.chrom !== null && gene.start !== null && gene.end !== null && gene.strand !== null
+
+  const renderUrl = celltype
+    ? geneviewRenderUrl({
+        run: runId,
+        celltype,
+        gene: gene.gene_id,
+        engine,
+        cluster_key: clusterKey,
+        color_key: colorKey || undefined,
+        pas_distance_table: pasDistanceTable,
+      })
+    : null
 
   return (
     <div className="gene-view">
       <header className="gene-view__header">
         <h2>{gene.gene_name}</h2>
         <span className="mono">{gene.gene_id}</span>
-        {meta ? (
-          <>
-            <span className="badge badge--neutral">
-              {meta.chrom ? `${meta.chrom}:${meta.start}-${meta.end} (${meta.strand})` : 'coordinates unavailable'}
-            </span>
-            <span className="badge badge--neutral">dataset: {meta.dataset_id}</span>
-            <span className="badge badge--neutral">{meta.n_pas ?? 0} PAS</span>
-            <span className="badge badge--neutral">{meta.n_isoforms ?? 0} isoforms</span>
-          </>
-        ) : null}
+        <span className="badge badge--neutral">
+          {hasSpan ? `${gene.chrom}:${gene.start}-${gene.end} (${gene.strand})` : 'coordinates unavailable'}
+        </span>
+      </header>
+
+      <p className="gene-view__description">
+        The gene track ema produces from this run's real data: per-cluster PAS coverage and within-gene usage
+        proportions, gene isoform structure, and (when enabled) a PAS-distance table. Plotly adds full PAS + cell
+        metadata on hover and a switchable metric; matplotlib is the static equivalent. Generated on demand and
+        cached per (run, cell type, gene, engine, cluster/color key) — the first open can take up to ~15s, repeat
+        opens with the same options are instant.
+      </p>
+
+      <div className="panel gene-view__controls">
+        <label className="gene-view__control">
+          Cell type
+          <select value={celltype ?? ''} onChange={(e) => setSearchParams({ celltype: e.target.value })}>
+            {celltypes.length === 0 && <option value="">No cell types for this run</option>}
+            {celltypes.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="gene-view__control">
+          Cluster key
+          <select value={clusterKey} onChange={(e) => setClusterKey(e.target.value as ClusterKey)}>
+            <option value="stage">stage (disease stage)</option>
+            <option value="leiden">leiden (raw per-dataset cluster)</option>
+          </select>
+        </label>
+
+        <label className="gene-view__control">
+          Color key (optional)
+          <input
+            type="text"
+            placeholder="e.g. sample"
+            value={colorKey}
+            onChange={(e) => setColorKey(e.target.value)}
+          />
+        </label>
+
+        <label className="gene-view__control gene-view__control--checkbox">
+          <input type="checkbox" checked={pasDistanceTable} onChange={(e) => setPasDistanceTable(e.target.checked)} />
+          PAS-distance table overlay
+        </label>
 
         <div className="gene-view__engine-toggle" role="group" aria-label="Figure engine">
           <button
@@ -94,77 +173,37 @@ export function GeneView() {
             Matplotlib (static)
           </button>
         </div>
-      </header>
-
-      <p className="gene-view__description">
-        The gene track ema produces from this run's real data: per-cluster PAS coverage and within-gene usage
-        proportions, gene isoform structure, and a PAS-distance table (rank, coordinates, gap to the next PAS).
-        Plotly adds full PAS + cell metadata on hover and a switchable metric; matplotlib is the static equivalent.
-        Generated on demand and cached — the first open for a gene can take up to ~25s, repeat opens are instant.
-      </p>
+      </div>
 
       <div className="gene-view__body">
-        {metaQuery.isLoading ? (
-          <LoadingState label={`Generating geneview for ${gene.gene_name} — first open can take up to ~25s…`} />
-        ) : metaQuery.isError ? (
-          <ErrorState error={metaQuery.error} onRetry={() => metaQuery.refetch()} />
-        ) : meta ? (
-          <>
-            <div className="gene-view__figure">
-              {engine === 'plotly' ? (
-                <iframe
-                  key={`plotly-${gene.gene_id}-${meta.dataset_id}`}
-                  title={`${gene.gene_name} geneview (plotly)`}
-                  className="gene-view__iframe"
-                  src={geneviewHtmlUrl(gene.gene_id, runId, meta.dataset_id)}
-                />
-              ) : (
-                <img
-                  key={`matplotlib-${gene.gene_id}-${meta.dataset_id}`}
-                  alt={`${gene.gene_name} geneview (matplotlib)`}
-                  className="gene-view__img"
-                  src={geneviewPngUrl(gene.gene_id, runId, meta.dataset_id)}
-                />
-              )}
-            </div>
-
-            <div className="panel gene-view__distances">
-              <h4>PAS-distance table ({meta.pas_distances.length} PAS, dataset {meta.dataset_id}, cluster_key {meta.cluster_key})</h4>
-              {meta.pas_distances.length === 0 ? (
-                <p className="state-message">No surviving PAS for this gene in this dataset.</p>
-              ) : (
-                <table className="gene-view__table">
-                  <thead>
-                    <tr>
-                      <th>rank</th>
-                      <th>pas_id</th>
-                      <th>coords</th>
-                      <th>width_bp</th>
-                      <th>summit_pos</th>
-                      <th>gap_to_next_bp</th>
-                      <th>summit_dist_to_next_bp</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {meta.pas_distances.map((row) => (
-                      <tr key={row.pas_id}>
-                        <td>{row.rank}</td>
-                        <td className="mono">{row.pas_id}</td>
-                        <td className="mono">
-                          {row.chrom}:{row.start}-{row.end} ({row.strand})
-                        </td>
-                        <td>{row.width_bp}</td>
-                        <td>{row.summit_pos}</td>
-                        <td>{row.gap_to_next_bp ?? '—'}</td>
-                        <td>{row.summit_dist_to_next_bp ?? '—'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          </>
-        ) : null}
+        {!celltype ? (
+          <EmptyState
+            reason="no-match"
+            detail="This run has no B3_switch cell types to render a geneview for -- pick a gene from a Cell Types > switching-genes table, or select a cell type above once this run has switch results."
+          />
+        ) : (
+          <div className="gene-view__figure">
+            {figureLoading && <div className="gene-view__figure-loading">Generating geneview — first open can take up to ~15s…</div>}
+            {engine === 'plotly' ? (
+              <iframe
+                key={renderUrl}
+                title={`${gene.gene_name} geneview (plotly, ${celltype})`}
+                className="gene-view__iframe"
+                src={renderUrl ?? undefined}
+                onLoad={() => setFigureLoading(false)}
+              />
+            ) : (
+              <img
+                key={renderUrl}
+                alt={`${gene.gene_name} geneview (matplotlib, ${celltype})`}
+                className="gene-view__img"
+                src={renderUrl ?? undefined}
+                onLoad={() => setFigureLoading(false)}
+                onError={() => setFigureLoading(false)}
+              />
+            )}
+          </div>
+        )}
       </div>
     </div>
   )

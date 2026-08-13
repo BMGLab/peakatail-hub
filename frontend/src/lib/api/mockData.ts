@@ -13,6 +13,7 @@ import type {
   GeneviewPasDistanceRow,
   GeneviewRenderMeta,
   LengthRow,
+  SwitchResults,
   PasDetail,
   PasLedgerRow,
   RunQc,
@@ -41,6 +42,7 @@ export const mockRuns: RunSummary[] = [
     source_path: '/mock/sources/cohort_a',
     source_label: 'Cohort A (mock)',
     n_celltypes: 4,
+    atlas_snap_available: true,
   },
   {
     run_id: 'run-laughney-2024-01-subset',
@@ -59,6 +61,7 @@ export const mockRuns: RunSummary[] = [
     source_path: '/mock/sources/cohort_b_subset',
     source_label: 'Cohort B subset (mock)',
     n_celltypes: 3,
+    atlas_snap_available: true,
   },
 ]
 
@@ -284,6 +287,48 @@ export function mockGeneviewMeta(geneId: string): GeneviewRenderMeta | null {
     duration_sec: 0,
     pas_distances: distances,
   }
+}
+
+// ---------------------------------------------------------------------------
+// B3_switch results (2026-08-14) -- backs the "Cell Types" primary nav view.
+// ---------------------------------------------------------------------------
+
+export function mockSwitchResults(runId: string): SwitchResults {
+  return { ..._mockSwitchResults, run_id: runId }
+}
+
+const _mockSwitchResults: SwitchResults = {
+  run_id: 'fixture-run-0001',
+  cluster_match: { file_path: 'B3_switch/match/cluster_match.tsv', file_size_bytes: 813810 },
+  celltypes: celltypes.map((celltype, i) => ({
+    celltype,
+    diff: { fisher: 40 + i * 12, nb_multi: 18 + i * 5 },
+    length: {
+      classic: { file_size_bytes: 600_000_000 + i * 20_000_000 },
+      proportion: { file_size_bytes: 2_700_000_000 + i * 90_000_000 },
+      shannon: { file_size_bytes: 800_000_000 + i * 30_000_000 },
+    },
+    trend: {
+      n_stages: 2,
+      slope: i % 2 === 0 ? -0.02 - i * 0.001 : 0.015 + i * 0.001,
+      spearman: i % 2 === 0 ? -1 : 1,
+      direction: i % 2 === 0 ? 'decreasing' : 'increasing',
+      value_col: 'pdui',
+      mean_by_stage: { Normal: 0.04 + i * 0.002, Met: 0.01 + i * 0.001 },
+    },
+  })),
+}
+
+export function mockSwitchTrendGenes(celltype: string): { gene_id: string; n_stages: number; slope: number; spearman: number; direction: string }[] {
+  const entry = _mockSwitchResults.celltypes.find((c) => c.celltype === celltype)
+  if (!entry) return []
+  return genes.map((g, i) => ({
+    gene_id: g.gene_id,
+    n_stages: 2,
+    slope: (entry.trend?.slope ?? 0) * (1 - i * 0.1),
+    spearman: entry.trend?.spearman ?? 0,
+    direction: entry.trend?.direction ?? 'decreasing',
+  }))
 }
 
 export const mockCells: CellDetail[] = Array.from({ length: 40 }, (_, i) => ({

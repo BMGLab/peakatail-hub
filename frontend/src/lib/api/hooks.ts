@@ -17,6 +17,23 @@ export function useRunQc(runId: string | null) {
   })
 }
 
+// B3_switch results -- "cell types -> stages -> genes" (ResultsView).
+export function useRunSwitch(runId: string | null) {
+  return useQuery({
+    queryKey: ['runSwitch', runId],
+    queryFn: () => api.getRunSwitch(runId!),
+    enabled: runId !== null,
+  })
+}
+
+export function useRunSwitchTrendGenes(runId: string | null, celltype: string | null, limit = 50) {
+  return useQuery({
+    queryKey: ['runSwitchTrendGenes', runId, celltype, limit],
+    queryFn: () => api.getRunSwitchTrendGenes(runId!, celltype!, limit),
+    enabled: runId !== null && celltype !== null,
+  })
+}
+
 export function useFindings(params: FindingsParams) {
   return useQuery({
     queryKey: ['findings', params],

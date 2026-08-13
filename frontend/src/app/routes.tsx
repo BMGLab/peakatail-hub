@@ -9,6 +9,8 @@ import { UmapView } from '@views/umap/UmapView'
 import { QcView } from '@views/qc/QcView'
 import { AuditView } from '@views/audit/AuditView'
 import { CompareView } from '@views/compare/CompareView'
+import { ResultsView } from '@views/results/ResultsView'
+import { ResultsCelltypeView } from '@views/results/ResultsCelltypeView'
 
 export interface NavRoute {
   path: string
@@ -38,6 +40,13 @@ export interface NavRoute {
 // bar still jumps straight to "/genes/:geneId" from anywhere in the app.
 export const routes: NavRoute[] = [
   { path: '/', label: 'Dashboard', element: <DashboardView /> },
+  // Primary nav (per explicit product direction, 2026-08-14): "cell types ->
+  // stages -> genes" matters more than flat gene browsing -- the professor's
+  // headline finding (3'UTR shortening/lengthening across disease stages) is
+  // organized by cell type first. Placed right after Dashboard, ahead of the
+  // gene Browser.
+  { path: '/results', label: 'Cell Types', element: <ResultsView />, matchPrefix: '/results' },
+  { path: '/results/:celltype', label: 'Cell Types', element: <ResultsCelltypeView />, hideFromNav: true },
   { path: '/browser', label: 'Browser', element: <GeneView />, matchPrefix: '/genes' },
   { path: '/genes/:geneId', label: 'Browser', element: <GeneView />, hideFromNav: true },
   { path: '/findings', label: 'Findings', element: <FindingsView /> },

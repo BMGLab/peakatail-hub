@@ -1,0 +1,121 @@
+.results-view {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.results-view__header {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.results-view__header h2 {
+  margin: 0;
+  color: var(--text-h);
+}
+
+.results-view__description {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-dim);
+  max-width: 90ch;
+}
+
+.results-view__back {
+  font-size: 12px;
+  color: var(--text-dim);
+  text-decoration: none;
+  width: fit-content;
+}
+
+.results-view__back:hover {
+  color: var(--accent);
+}
+
+.results-view__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+
+.results-view__card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  text-align: left;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-surface);
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+}
+
+.results-view__card:hover {
+  background: var(--bg-hover);
+  border-color: var(--accent-line, var(--border));
+}
+
+.results-view__card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.results-view__card-title {
+  font-weight: 600;
+  color: var(--text-h);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.results-view__trend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.results-view__trend strong {
+  color: var(--text-h);
+}
+
+.results-view__stats {
+  display: flex;
+  gap: 16px;
+}
+
+.results-view__stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.results-view__stat .num {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+.results-view__trend-panel {
+  padding: 14px;
+}
+
+.results-view__trend-panel h4 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--text-h);
+}
+
+.results-view__length-avail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}

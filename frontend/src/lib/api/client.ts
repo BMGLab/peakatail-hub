@@ -28,6 +28,8 @@ import type {
   SourceScanReport,
   SourceScanResult,
   StubResponse,
+  SwitchResults,
+  SwitchTrendGeneRow,
   UmapPoint,
 } from '@lib/contract/types'
 import {
@@ -46,6 +48,8 @@ import {
   mockRuns,
   mockSearch,
   mockSources,
+  mockSwitchResults,
+  mockSwitchTrendGenes,
   mockUmap,
 } from './mockData'
 
@@ -127,9 +131,14 @@ function mockScanSource(source: Source): SourceScanResult {
 }
 
 export interface FindingsParams {
+  /** Scopes to one indexed run -- the real deployment has 19+; omitting
+   * this used to silently mix every run's findings together (FIX 2026-08-14,
+   * see FindingsView's own doc comment on why it now always threads the
+   * TopBar Scope selector's run through here). */
+  run_id?: string | undefined
   arm?: string
   strategy?: FindingRow['strategy']
-  celltype?: string
+  celltype?: string | undefined
   direction?: FindingRow['direction']
   utr_class?: string
   q_max?: number
@@ -339,6 +348,22 @@ export const api = {
   getRunQc(runId: string): Promise<RunQc | null> {
     if (USE_MOCKS) return delay(mockRunQc[runId] ?? null)
     return fetchJson(`/runs/${runId}/qc`)
+  },
+
+  // -------------------------------------------------------------------------
+  // B3_switch results (2026-08-14) -- "cell types -> stages -> genes", the
+  // PRIMARY navigation the professor's headline finding (3'UTR shortening
+  // across disease stages, per cell type) needs. Backs ResultsView.
+  // -------------------------------------------------------------------------
+
+  getRunSwitch(runId: string): Promise<SwitchResults> {
+    if (USE_MOCKS) return delay(mockSwitchResults(runId))
+    return fetchJson(`/runs/${runId}/switch`)
+  },
+
+  getRunSwitchTrendGenes(runId: string, celltype: string, limit = 50): Promise<SwitchTrendGeneRow[]> {
+    if (USE_MOCKS) return delay(mockSwitchTrendGenes(celltype))
+    return fetchJson(`/runs/${runId}/switch/${encodeURIComponent(celltype)}/trend-genes`, { limit })
   },
 
   getFindings(params: FindingsParams): Promise<FindingsPage> {
@@ -654,31 +679,40 @@ export const api = {
 }
 
 // ---------------------------------------------------------------------------
-// Real ema geneview figure URLs -- exported as plain URL builders (not
-// `api.*` methods that fetch/parse a body) because GeneView hands these
-// straight to an <iframe src>/<img src>, which does its own request/loading
-// outside this client. Only meaningful once `api.getGeneviewMeta` has
-// confirmed the figure is generated/cached (see that method's doc comment);
-// calling these standalone would still work but re-triggers the same
-// ~10-25s on-demand generation with no loading indicator to show for it.
-// Mock mode has no backend to point at (no real ema output exists in
-// memory) -- these still build a same-shaped URL so the <iframe>/<img>
-// element renders (as a broken/empty load, same as any other
-// backend-file-serving endpoint would look like without VITE_USE_MOCKS=false).
+// Real ema geneview -- served by a SEPARATE host-side microservice
+// (geneview_svc.py, per-celltype renders, plotly+matplotlib+distance table,
+// on-demand + cached), reached via a same-origin nginx proxy at
+// `/geneview/*` (NOT under API_BASE/`/api` -- a sibling location block,
+// wired by whoever deploys the frontend). Exported as a plain URL builder
+// (not an `api.*` method that fetches/parses a body) because GeneView hands
+// this straight to an <iframe src>/<img src>, which does its own request/
+// loading outside this client -- the first (uncached) render takes ~15s,
+// during which the browser just shows its native "loading" affordance for
+// that element; GeneView pairs this with an explicit loading message of its
+// own rather than relying on that alone.
 // ---------------------------------------------------------------------------
 
-function geneviewFigureUrl(ext: 'html' | 'png', geneId: string, runId?: string, datasetId?: string): string {
-  const params = new URLSearchParams()
-  if (runId) params.set('run_id', runId)
-  if (datasetId) params.set('dataset_id', datasetId)
-  const qs = params.toString()
-  return `${API_BASE}/genes/${geneId}/geneview.${ext}${qs ? `?${qs}` : ''}`
+export interface GeneviewRenderParams {
+  run: string
+  celltype: string
+  gene: string
+  engine: 'plotly' | 'matplotlib'
+  /** obs column driving cluster grouping -- 'stage' (disease stage, the
+   * professor's headline axis) or 'leiden' (raw per-dataset cluster). */
+  cluster_key?: string | undefined
+  /** obs column to additionally tint tracks by (e.g. a condition/sample axis). */
+  color_key?: string | undefined
+  pas_distance_table?: boolean | undefined
 }
 
-export function geneviewHtmlUrl(geneId: string, runId?: string, datasetId?: string): string {
-  return geneviewFigureUrl('html', geneId, runId, datasetId)
-}
-
-export function geneviewPngUrl(geneId: string, runId?: string, datasetId?: string): string {
-  return geneviewFigureUrl('png', geneId, runId, datasetId)
+export function geneviewRenderUrl(params: GeneviewRenderParams): string {
+  const qs = new URLSearchParams()
+  qs.set('run', params.run)
+  qs.set('celltype', params.celltype)
+  qs.set('gene', params.gene)
+  qs.set('engine', params.engine)
+  if (params.cluster_key) qs.set('cluster_key', params.cluster_key)
+  if (params.color_key) qs.set('color_key', params.color_key)
+  if (params.pas_distance_table !== undefined) qs.set('pas_distance_table', String(params.pas_distance_table))
+  return `/geneview/render?${qs.toString()}`
 }

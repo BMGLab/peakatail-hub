@@ -78,9 +78,9 @@ function PasFields({ pas }: { pas: PasDetail | GeneviewPas | GeneviewPasSelectio
         <dt>tier</dt>
         <dd>{pas.tier ?? '—'}</dd>
         <dt>snap_distance_bp</dt>
-        <dd>{pas.snap_distance_bp ?? '—'}</dd>
+        <dd>{pas.snap_distance_bp ?? 'N/A (no atlas-snap step, or not snapped)'}</dd>
         <dt>gene_distance_bp</dt>
-        <dd>{pas.gene_distance_bp ?? '—'}</dd>
+        <dd>{pas.gene_distance_bp ?? (full?.gene_id ? 'N/A' : 'N/A (intergenic)')}</dd>
         <dt>last_stage</dt>
         <dd>{full?.last_stage ?? '—'}</dd>
         <dt>dropped_at</dt>

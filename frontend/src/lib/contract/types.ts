@@ -135,6 +135,64 @@ export interface RunSummary {
   source_label: string | null
   /** Distinct non-null celltype values across this run's findings -- shown on the dashboard's run card. */
   n_celltypes: number | null
+  /** Whether this run has any atlas-snap provenance at all (index/indexer.py
+   * `_atlas_snap_available`) -- `false` on `reannotate` runs (no snap step
+   * of their own, a real "not applicable"), `null` only for a run indexed
+   * before this flag existed. */
+  atlas_snap_available: boolean | null
+}
+
+// ---------------------------------------------------------------------------
+// B3_switch results (2026-08-14) -- "cell types -> stages -> genes" is the
+// PRIMARY navigation the professor's headline finding (3'UTR shortening
+// across disease stages, per cell type) needs, ahead of flat gene browsing.
+// Mirrors backend schemas.py SwitchResults/SwitchCelltypeResult/SwitchTrend
+// exactly (GET /runs/{run_id}/switch, GET /runs/{run_id}/switch/{celltype}/trend-genes).
+// ---------------------------------------------------------------------------
+
+export interface SwitchTrend {
+  n_stages: number | null
+  slope: number | null
+  spearman: number | null
+  direction: string | null
+  value_col: string | null
+  mean_by_stage: Record<string, number>
+}
+
+export interface SwitchLengthAvailability {
+  file_size_bytes: number | null
+}
+
+/** One cell type's B3_switch results within a run: `diff` = finding counts
+ * per strategy (already fully queryable via `/findings?celltype=...`),
+ * `length` = availability only (the classic/proportion/shannon files are
+ * per-cell x per-gene and can be 100GB+ for one run -- never fully
+ * ingested, see the backend's switch_availability table), `trend` = the
+ * fully-ingested length-across-stages headline. */
+export interface SwitchCelltypeResult {
+  celltype: string
+  diff: Record<string, number>
+  length: Record<string, SwitchLengthAvailability>
+  trend: SwitchTrend | null
+}
+
+export interface ClusterMatchAvailability {
+  file_path: string | null
+  file_size_bytes: number | null
+}
+
+export interface SwitchResults {
+  run_id: string
+  celltypes: SwitchCelltypeResult[]
+  cluster_match: ClusterMatchAvailability | null
+}
+
+export interface SwitchTrendGeneRow {
+  gene_id: string
+  n_stages: number | null
+  slope: number | null
+  spearman: number | null
+  direction: string | null
 }
 
 /** Matches backend schemas.py `SourceSummary` (GET/POST /sources). One

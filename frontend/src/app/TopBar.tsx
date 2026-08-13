@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useRuns, useSearch } from '@lib/api/hooks'
 import { api } from '@lib/api/client'
@@ -39,6 +39,20 @@ export function TopBar() {
   const { runId, datasetId, setScope } = useScopeStore()
   const select = useSelectionStore((s) => s.select)
   const pinned = usePinStore((s) => s.pinned)
+
+  // FIX: nothing auto-selected a run, so every scope-gated view (GeneView,
+  // QcView, UmapView, AuditView, CompareView, the new ResultsView) either
+  // showed its "select a run first" empty state on first load, or -- for
+  // endpoints that don't require run_id until >1 run is indexed (findings,
+  // genes once there's exactly one run) -- silently 400'd once a second run
+  // got indexed. Default to the first run the moment `runs` loads, same as
+  // picking it from the dropdown; a user who explicitly picks a different
+  // run afterwards is untouched (this only fires while `runId` is null).
+  useEffect(() => {
+    if (runId === null && runs && runs.length > 0) {
+      setScope(runs[0]!.run_id, runs[0]!.run_id)
+    }
+  }, [runId, runs, setScope])
 
   function handleResultClick(r: SearchResult) {
     setOpen(false)
