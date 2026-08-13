@@ -346,6 +346,58 @@ export interface GeneviewLayerData {
   clusterTracks: GeneviewClusterTrack[]
 }
 
+// ---------------------------------------------------------------------------
+// Real ema geneview (2026-08-14) -- replaces the hand-rolled
+// GeneviewLayerData/GeneviewCanvas track rendering above (still kept around
+// for DetailPanel's PAS-selection typing; NOT used by GeneView anymore) with
+// the actual `ema switch geneview` output: an interactive plotly figure and
+// a static matplotlib figure, both generated on demand by a host-side
+// worker and served as real files (backend schemas.py GeneviewRender /
+// GeneviewPasDistanceRow, api/geneview.py). GeneView embeds the figure
+// directly (iframe for plotly, img for matplotlib) rather than re-drawing
+// anything client-side.
+// ---------------------------------------------------------------------------
+
+/** One row of the PAS-distance table ema draws beneath the gene panel
+ * (`--pas-distance-table`, on by default from the hub) and this type mirrors
+ * for a real, readable table alongside the embedded figure. */
+export interface GeneviewPasDistanceRow {
+  rank: number
+  pas_id: string
+  chrom: string
+  strand: '+' | '-'
+  start: number
+  end: number
+  width_bp: number
+  summit_pos: number
+  gap_to_next_bp: number | null
+  summit_dist_to_next_bp: number | null
+}
+
+/** `GET /genes/{id}/geneview/meta` -- metadata + the PAS-distance table for
+ * the currently-cached/just-generated real geneview figure. Also the signal
+ * GeneView uses to know a cache-miss finished generating (and warmed the
+ * cache) before pointing the plotly iframe / matplotlib img at the figure
+ * endpoints, so those load instantly instead of racing a ~10-25s cold
+ * render. */
+export interface GeneviewRenderMeta {
+  gene_id: string
+  gene_name: string
+  run_id: string
+  dataset_id: string
+  cluster_key: string
+  chrom: string | null
+  start: number | null
+  end: number | null
+  strand: '+' | '-' | null
+  n_pas: number | null
+  n_clusters_rendered: number | null
+  n_isoforms: number | null
+  cached: boolean
+  duration_sec: number
+  pas_distances: GeneviewPasDistanceRow[]
+}
+
 export interface UmapPoint {
   cell_uid: string
   x: number

@@ -73,6 +73,22 @@ export function useGeneCounts(id: string | null) {
   })
 }
 
+// Real ema geneview (2026-08-14). `retry: false` -- a cache-miss render
+// already blocks for up to ~25s server-side (the backend's own
+// cross-dataset fallback, see api/geneview.py); TanStack Query's default
+// retry-with-backoff on top of that would make a genuine failure (worker
+// down, gene truly has no PAS anywhere) take minutes to surface instead of
+// seconds. GeneView's own "Retry" button (ErrorState) is the explicit
+// re-trigger, not an automatic one.
+export function useGeneviewMeta(id: string | null, runId?: string | null, datasetId?: string | null) {
+  return useQuery({
+    queryKey: ['geneviewMeta', id, runId, datasetId],
+    queryFn: () => api.getGeneviewMeta(id!, runId ?? undefined, datasetId ?? undefined),
+    enabled: id !== null && runId !== null,
+    retry: false,
+  })
+}
+
 export function usePas(id: string | null) {
   return useQuery({
     queryKey: ['pas', id],

@@ -17,6 +17,7 @@ import type {
   GeneviewClusterTrack,
   GeneviewIsoform,
   GeneviewLayerData,
+  GeneviewRenderMeta,
   LengthRow,
   PasDetail,
   PasLedgerRow,
@@ -38,6 +39,7 @@ import {
   mockGenes,
   mockGenesPage,
   mockGeneviewData,
+  mockGeneviewMeta,
   mockPasForGene,
   mockPasPage,
   mockRunQc,
@@ -455,6 +457,25 @@ export const api = {
     return fetchJson(`/genes/${id}/counts`)
   },
 
+  // -------------------------------------------------------------------------
+  // Real ema geneview (2026-08-14) -- GeneView embeds these two figure
+  // endpoints directly (iframe/img `src`, not fetched through this client)
+  // once getGeneviewMeta confirms the figure is generated/cached; see
+  // geneviewHtmlUrl/geneviewPngUrl below and GeneView.tsx.
+  // -------------------------------------------------------------------------
+
+  /** Triggers on-demand generation (~10-25s on a cold cache; the backend
+   * itself retries across a few datasets if the first pick has no PAS for
+   * this gene -- see api/geneview.py) and returns metadata + the real
+   * PAS-distance table once the figure is ready/cached. GeneView awaits
+   * this BEFORE pointing the iframe/img at geneviewHtmlUrl/geneviewPngUrl,
+   * so those always hit an already-warm cache (near-instant) rather than
+   * racing a cold render with no loading indicator. */
+  getGeneviewMeta(id: string, runId?: string, datasetId?: string): Promise<GeneviewRenderMeta | null> {
+    if (USE_MOCKS) return delay(mockGeneviewMeta(id))
+    return fetchJson<GeneviewRenderMeta>(`/genes/${id}/geneview/meta`, { run_id: runId, dataset_id: datasetId })
+  },
+
   getPas(id: string): Promise<PasDetail | null> {
     if (USE_MOCKS) {
       for (const g of mockGenes) {
@@ -630,4 +651,34 @@ export const api = {
     if (USE_MOCKS) return delay(mockSourcesState.map((s) => mockScanSource(s)))
     return sendJson<{ sources: SourceScanResult[] }>('POST', '/sources/rescan-all').then((r) => r.sources)
   },
+}
+
+// ---------------------------------------------------------------------------
+// Real ema geneview figure URLs -- exported as plain URL builders (not
+// `api.*` methods that fetch/parse a body) because GeneView hands these
+// straight to an <iframe src>/<img src>, which does its own request/loading
+// outside this client. Only meaningful once `api.getGeneviewMeta` has
+// confirmed the figure is generated/cached (see that method's doc comment);
+// calling these standalone would still work but re-triggers the same
+// ~10-25s on-demand generation with no loading indicator to show for it.
+// Mock mode has no backend to point at (no real ema output exists in
+// memory) -- these still build a same-shaped URL so the <iframe>/<img>
+// element renders (as a broken/empty load, same as any other
+// backend-file-serving endpoint would look like without VITE_USE_MOCKS=false).
+// ---------------------------------------------------------------------------
+
+function geneviewFigureUrl(ext: 'html' | 'png', geneId: string, runId?: string, datasetId?: string): string {
+  const params = new URLSearchParams()
+  if (runId) params.set('run_id', runId)
+  if (datasetId) params.set('dataset_id', datasetId)
+  const qs = params.toString()
+  return `${API_BASE}/genes/${geneId}/geneview.${ext}${qs ? `?${qs}` : ''}`
+}
+
+export function geneviewHtmlUrl(geneId: string, runId?: string, datasetId?: string): string {
+  return geneviewFigureUrl('html', geneId, runId, datasetId)
+}
+
+export function geneviewPngUrl(geneId: string, runId?: string, datasetId?: string): string {
+  return geneviewFigureUrl('png', geneId, runId, datasetId)
 }
