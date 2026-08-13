@@ -54,6 +54,13 @@ CREATE TABLE IF NOT EXISTS runs (
     -- re-index) still gets this column re-pointed at whichever source most
     -- recently discovered it, via queries.touch_run_source.
     source_id             VARCHAR,
+    -- Whether this run has ANY atlas-snap provenance (<run>/unified/
+    -- atlas_status.tsv exists) -- absent entirely on `reannotate` runs (no
+    -- snap step of their own). Lets the PAS browser render an honest
+    -- "N/A (no atlas-snap step)" for the whole snap_distance_bp column
+    -- instead of a bare per-row dash indistinguishable from broken data.
+    -- See index/indexer.py::_atlas_snap_available / _snap_distance_lookup.
+    atlas_snap_available  BOOLEAN,
     indexed_at            TIMESTAMP
 );
 
@@ -219,6 +226,7 @@ CREATE INDEX IF NOT EXISTS idx_runs_source ON runs(source_id);
 # no-op either way.
 _MIGRATIONS = """
 ALTER TABLE runs ADD COLUMN IF NOT EXISTS source_id VARCHAR;
+ALTER TABLE runs ADD COLUMN IF NOT EXISTS atlas_snap_available BOOLEAN;
 """
 
 

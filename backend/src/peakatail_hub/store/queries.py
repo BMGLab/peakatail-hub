@@ -58,6 +58,7 @@ _RUN_SUMMARY_COLUMNS = [
     "resolved_config", "stratum_to_label",
     "n_pas", "n_cells", "n_genes", "n_datasets", "n_findings", "n_length_rows",
     "indexed_at", "source_id", "source_path", "source_label", "n_celltypes",
+    "atlas_snap_available",
 ]
 
 
@@ -80,7 +81,8 @@ def list_runs(con: duckdb.DuckDBPyConnection) -> list[dict[str, Any]]:
                 SELECT count(DISTINCT f.celltype)
                 FROM findings_long f
                 WHERE f.run_id = r.run_id AND f.celltype IS NOT NULL AND f.celltype != ''
-            ) AS n_celltypes
+            ) AS n_celltypes,
+            r.atlas_snap_available
         FROM runs r
         LEFT JOIN sources s ON r.source_id = s.source_id
         ORDER BY r.run_id

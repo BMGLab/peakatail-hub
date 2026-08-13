@@ -30,6 +30,7 @@ def _to_run_summary(row: dict) -> RunSummary:
         source_path=row.get("source_path"),
         source_label=row.get("source_label"),
         n_celltypes=row.get("n_celltypes"),
+        atlas_snap_available=row.get("atlas_snap_available"),
     )
 
 

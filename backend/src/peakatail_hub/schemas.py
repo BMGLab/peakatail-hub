@@ -45,6 +45,13 @@ class RunSummary(BaseModel):
     # rows -- shown on the dashboard's per-run card. None (not 0) when the
     # run has zero findings rows at all vs. genuinely zero celltypes seen.
     n_celltypes: int | None = None
+    # Whether this run has ANY atlas-snap provenance (index/indexer.py::
+    # _atlas_snap_available) -- False on `reannotate` runs (no snap step of
+    # their own), which the PAS browser uses to render an honest
+    # "N/A (no atlas-snap step)" for the whole snap_distance_bp column
+    # instead of a per-row dash indistinguishable from broken data. None
+    # only for a run indexed before this flag existed.
+    atlas_snap_available: bool | None = None
 
 
 class SourceSummary(BaseModel):

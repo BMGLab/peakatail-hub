@@ -212,9 +212,16 @@ def _pas_annot_df(run_id: str, run_dir: Path) -> pd.DataFrame:
       Reconciling the two id spaces needs the engine's own
       `unified/pas_uid.tsv` / `unified/multi_sample_pas_mapping.tsv`
       sidecars and is out of this fix's scope.
-    * `orig_pas_key`/`snap_distance_bp`/`gene_distance_bp` have no source in
-      this file; `orig_pas_key` falls back to the bed `pas_id`, the other
-      two stay `None`.
+    * `orig_pas_key` has no source in this file; falls back to the bed
+      `pas_id`.
+    * `gene_distance_bp`/`snap_distance_bp` are NOT in this file either, but
+      ARE recovered from two other cheap, always-or-usually-present
+      artifacts -- see `_gene_distance_lookup`/`_snap_distance_lookup`
+      below for what each is sourced from and why (this used to leave both
+      columns permanently blank in the PAS browser, read as "broken" rather
+      than "genuinely not applicable" -- see `index_run`'s
+      `atlas_snap_available` note for how `snap_distance_bp`'s absence is
+      now distinguished from a genuine zero/no-match).
 
     Returns an empty DataFrame (never raises) if `annotatedpas.bed` doesn't
     exist for this run -- callers fall back to whatever `_pas_ledger_df`
@@ -255,9 +262,13 @@ def _pas_annot_df(run_id: str, run_dir: Path) -> pd.DataFrame:
     tier_label = raw[raw.shape[1] - 1].astype(str)
 
     pos = np.where(strand.to_numpy() == "+", end.to_numpy() - 1, start.to_numpy())
-    pas_uid = chrom.str.cat(pd.Series(pos, index=raw.index).astype(str), sep=":").str.cat(strand, sep=":")
+    pos_series = pd.Series(pos, index=raw.index)
+    pas_uid = chrom.str.cat(pos_series.astype(str), sep=":").str.cat(strand, sep=":")
 
     n = len(raw)
+    gene_distance = _gene_distance_lookup(run_dir, gene_id, pos_series)
+    snap_distance = _snap_distance_lookup(run_dir, pas_id)
+
     return pd.DataFrame(
         {
             "run_id": [run_id] * n,
@@ -268,15 +279,109 @@ def _pas_annot_df(run_id: str, run_dir: Path) -> pd.DataFrame:
             "end": end,
             "strand": strand,
             "unified_pas_id": pas_id,
-            "snap_distance_bp": pd.array([None] * n, dtype="Int64"),
+            "snap_distance_bp": snap_distance,
             "gene_id": gene_id,
-            "gene_distance_bp": pd.array([None] * n, dtype="Int64"),
+            "gene_distance_bp": gene_distance,
             "tier": tier_label,
             "last_stage": ["annotated"] * n,
             "dropped_at": [""] * n,
             "drop_reason": [None] * n,
         }
     )
+
+
+def _gene_distance_lookup(run_dir: Path, gene_id: pd.Series, pas_pos: pd.Series) -> pd.Series:
+    """Real source for `gene_distance_bp` ("distance (bp) from this PAS to
+    gene_id's 3' end", PasLedgerRow's own docstring): `<run_dir>/gene_end.bed`
+    (BED6-ish, no header, columns `chrom, start, end, gene_id, gene_symbol,
+    strand` -- present on every run inspected, ~40k genes, cheap to read
+    fully). Distance is `abs(pas_summit_pos - gene_3prime_end_pos)`, where
+    `gene_3prime_end_pos` uses the SAME strand-aware convention as
+    `_pas_summit_pos` (the gene's `end` column on `+`, `start` on `-`) -- PAS
+    calling assigns a PAS to the nearest gene by exactly this distance, so a
+    surviving PAS is typically very close to (often 0 from) its assigned
+    gene's 3' end; a large value here is a real, meaningful signal (e.g. a
+    3'UTR-extension PAS), not a data-quality flag.
+
+    Returns an all-null `Int64` series (never raises) if `gene_end.bed`
+    doesn't exist, is unreadable, or a given row's `gene_id` isn't in it
+    (INTERGENIC-tier rows have `gene_id == ''` and are always null here).
+    """
+    n = len(gene_id)
+    null_result = pd.array([None] * n, dtype="Int64")
+    path = run_dir / "gene_end.bed"
+    if not path.exists():
+        return null_result
+    try:
+        genes = pd.read_csv(
+            path, sep="\t", header=None, names=["chrom", "start", "end", "gene_id", "gene_symbol", "strand"],
+            dtype={"chrom": str, "start": np.int64, "end": np.int64, "gene_id": str, "gene_symbol": str, "strand": str},
+            usecols=[0, 1, 2, 3, 5], engine="c",
+        )
+    except Exception as exc:  # noqa: BLE001 -- a malformed gene_end.bed must not abort indexing
+        logger.warning("run_id gene_distance_bp lookup: %s unreadable, leaving column null (%s)", path, exc)
+        return null_result
+    genes = genes.drop_duplicates(subset="gene_id", keep="first").set_index("gene_id")
+    gene_end_pos = np.where(genes["strand"].to_numpy() == "+", genes["end"].to_numpy() - 1, genes["start"].to_numpy())
+    gene_end_by_id = pd.Series(gene_end_pos, index=genes.index)
+
+    matched_end = gene_id.map(gene_end_by_id)  # NaN where gene_id unknown/empty
+    distance = (pas_pos.to_numpy(dtype=np.float64) - matched_end.to_numpy(dtype=np.float64))
+    distance = np.abs(distance)
+    return pd.array([None if pd.isna(d) else int(d) for d in distance], dtype="Int64")
+
+
+def _snap_distance_lookup(run_dir: Path, pas_id: pd.Series) -> pd.Series:
+    """Real source for `snap_distance_bp`: `<run_dir>/unified/atlas_status.tsv`
+    (columns `unified_pas_id, atlas_match, atlas_distance_bp`), written only
+    when the run used atlas-snap unification -- absent entirely on
+    `reannotate` runs (branched from an already-unified state, no snap step
+    of their own), which is a genuinely different, legitimate state from "PAS
+    calling ran but nothing snapped" and is surfaced as such via
+    `index_run`'s `atlas_snap_available` run-level flag (see there), not
+    conflated with a per-row null here.
+
+    `unified_pas_id` in this file is the SAME run-level unified id as
+    annotatedpas.bed's `pas_id` column (verified: `atlas_match=True` row
+    count here matches `n_snapped` in `figures/atlas_snap.meta.json`
+    exactly on B1_cohort_full) -- joins directly on it, no id-space mismatch
+    (unlike `unified_pas_id` vs per-dataset h5ad var_names, see this
+    function's caller's docstring).
+
+    Only `atlas_match == True` rows populate a real distance -- `atlas_status.tsv`
+    also records a distance-to-nearest-atlas-candidate for UNMATCHED PAS
+    (`atlas_match == False`, e.g. "168" bp away, still too far to snap), and
+    that is NOT what `snap_distance_bp` means ("distance to the atlas PAS
+    this was snapped to" -- PasLedgerRow's own docstring); those rows are
+    null here, not the raw nearest-candidate distance.
+    """
+    n = len(pas_id)
+    null_result = pd.array([None] * n, dtype="Int64")
+    path = run_dir / "unified" / "atlas_status.tsv"
+    if not path.exists():
+        return null_result
+    try:
+        status = pd.read_csv(
+            path, sep="\t", dtype={"unified_pas_id": str, "atlas_match": str, "atlas_distance_bp": str},
+            usecols=["unified_pas_id", "atlas_match", "atlas_distance_bp"], engine="c",
+        )
+    except Exception as exc:  # noqa: BLE001 -- a malformed atlas_status.tsv must not abort indexing
+        logger.warning("run_id snap_distance_bp lookup: %s unreadable, leaving column null (%s)", path, exc)
+        return null_result
+    matched = status[status["atlas_match"].str.lower() == "true"].drop_duplicates(subset="unified_pas_id", keep="first")
+    distance_by_id = matched.set_index("unified_pas_id")["atlas_distance_bp"]
+    joined = pas_id.map(distance_by_id)
+    return pd.array([None if pd.isna(v) else int(float(v)) for v in joined], dtype="Int64")
+
+
+def _atlas_snap_available(run_dir: Path) -> bool:
+    """Whether this run has ANY atlas-snap provenance at all (see
+    `_snap_distance_lookup`) -- surfaced as a run-level flag (`runs.
+    atlas_snap_available`, RunSummary) so the PAS browser can render
+    "N/A (no atlas-snap step for this run)" for the whole column on a
+    `reannotate` run instead of a bare em-dash per row that reads as broken
+    data."""
+    return (run_dir / "unified" / "atlas_status.tsv").exists()
 
 
 def _cell_ledger_df(run_id: str, run: Run) -> pd.DataFrame:
@@ -798,6 +903,7 @@ def index_run(con: duckdb.DuckDBPyConnection, run_dir: Path, source_id: str | No
     switch_availability_df = _switch_availability_df(run_id, run_dir)
 
     _stats = _run_headline_stats(run_dir, run, len(findings_df), len(length_df))
+    atlas_snap_available = _atlas_snap_available(run_dir)
     con.execute("BEGIN TRANSACTION")
     try:
         _delete_run(con, run_id)
@@ -815,8 +921,8 @@ def index_run(con: duckdb.DuckDBPyConnection, run_dir: Path, source_id: str | No
                 run_id, root, contract_version, manifest_checksum, artifacts_fingerprint,
                 resolved_config, stratum_to_label,
                 n_pas, n_cells, n_genes, n_datasets, n_findings, n_length_rows,
-                source_id, indexed_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now())
+                source_id, atlas_snap_available, indexed_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now())
             """,
             [
                 run_id,
@@ -833,6 +939,7 @@ def index_run(con: duckdb.DuckDBPyConnection, run_dir: Path, source_id: str | No
                 _stats["n_findings"],
                 _stats["n_length_rows"],
                 source_id,
+                atlas_snap_available,
             ],
         )
         con.execute("COMMIT")
