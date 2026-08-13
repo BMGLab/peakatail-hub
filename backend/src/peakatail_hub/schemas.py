@@ -312,3 +312,65 @@ class StubResponse(BaseModel):
     run_id: str
     available: bool
     note: str
+
+
+class RunDataset(BaseModel):
+    """One dataset (07_clustering/<dataset_id>/clusters.h5ad) indexed for a
+    run -- see `queries.list_run_datasets`. A run's `n_datasets` header stat
+    is a single aggregate count; this is the per-dataset identity behind it.
+    """
+
+    dataset_id: str
+    n_cells: int
+    n_clusters: int
+
+
+class SwitchLengthAvailability(BaseModel):
+    file_size_bytes: int | None = None
+
+
+class SwitchTrend(BaseModel):
+    n_stages: int | None = None
+    slope: float | None = None
+    spearman: float | None = None
+    direction: str | None = None
+    value_col: str | None = None
+    mean_by_stage: dict[str, float] = Field(default_factory=dict)
+
+
+class SwitchCelltypeResult(BaseModel):
+    """One celltype's B3_switch results within a run: diff (finding counts
+    per strategy, already queryable in full via `/findings?arm=switch_diff:...`),
+    length (availability only -- see `switch_availability` table docstring),
+    and trend (the fully-ingested length-across-stages headline).
+    """
+
+    celltype: str
+    diff: dict[str, int] = Field(default_factory=dict)
+    length: dict[str, SwitchLengthAvailability] = Field(default_factory=dict)
+    trend: SwitchTrend | None = None
+
+
+class ClusterMatchAvailability(BaseModel):
+    file_path: str | None = None
+    file_size_bytes: int | None = None
+
+
+class SwitchResults(BaseModel):
+    """`GET /runs/{run_id}/switch` -- the run's B3_switch results, modeled
+    truthfully as "many results per run" (task brief item 4) rather than a
+    single findings table. Empty `celltypes` (not an error) for a run with
+    no B3_switch directory at all (e.g. a single-dataset `reannotate` run).
+    """
+
+    run_id: str
+    celltypes: list[SwitchCelltypeResult] = Field(default_factory=list)
+    cluster_match: ClusterMatchAvailability | None = None
+
+
+class SwitchTrendGene(BaseModel):
+    gene_id: str
+    n_stages: int | None = None
+    slope: float | None = None
+    spearman: float | None = None
+    direction: str | None = None

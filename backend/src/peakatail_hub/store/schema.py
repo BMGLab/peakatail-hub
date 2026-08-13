@@ -153,6 +153,52 @@ CREATE TABLE IF NOT EXISTS umap_points (
     sample             VARCHAR   -- gated: NULL until B7 lands
 );
 
+-- B3_switch results (2026-08-13 multi-dataset fix, task brief item 4: "a
+-- run has MULTIPLE results" -- per-dataset clusterings (umap_points above)
+-- and switch-analysis results, surfaced truthfully rather than assumed to
+-- be a single findings_long.parquet). Switch-diff results are folded
+-- directly into `findings_long` (see index/indexer.py::_switch_diff_findings_df
+-- -- the real switch_diff_long.parquet is already FindingRow-shaped); these
+-- three tables cover what findings_long can't: the length-trend-across-
+-- stages headline (trend_summary/trend_gene, fully ingested -- small, a few
+-- thousand rows/celltype) and a cheap stat-only inventory of the
+-- classic/proportion/shannon length results (availability -- NOT
+-- fully ingested, those are per-cell x per-gene files seen up to ~100GB+
+-- for a single cohort run).
+CREATE TABLE IF NOT EXISTS switch_trend_summary (
+    run_id         VARCHAR,
+    celltype       VARCHAR,
+    n_stages       INTEGER,
+    slope          DOUBLE,
+    spearman       DOUBLE,
+    direction      VARCHAR,
+    value_col      VARCHAR,
+    mean_by_stage  VARCHAR  -- JSON-encoded {stage: mean_value}
+);
+
+CREATE TABLE IF NOT EXISTS switch_trend_gene (
+    run_id     VARCHAR,
+    celltype   VARCHAR,
+    gene_id    VARCHAR,
+    n_stages   INTEGER,
+    slope      DOUBLE,
+    spearman   DOUBLE,
+    direction  VARCHAR
+);
+
+CREATE TABLE IF NOT EXISTS switch_availability (
+    run_id           VARCHAR,
+    celltype         VARCHAR,  -- NULL for run-level results (e.g. cluster match)
+    kind             VARCHAR,  -- 'length' | 'match' (diff is queryable from findings_long directly)
+    subkind          VARCHAR,  -- 'classic' | 'proportion' | 'shannon' for kind='length'; NULL otherwise
+    file_path        VARCHAR,  -- run-relative path to the primary artifact
+    file_size_bytes  BIGINT
+);
+
+CREATE INDEX IF NOT EXISTS idx_switch_trend_summary_run ON switch_trend_summary(run_id);
+CREATE INDEX IF NOT EXISTS idx_switch_trend_gene_run ON switch_trend_gene(run_id, celltype);
+CREATE INDEX IF NOT EXISTS idx_switch_availability_run ON switch_availability(run_id);
+
 CREATE INDEX IF NOT EXISTS idx_pas_ledger_run ON pas_ledger(run_id);
 CREATE INDEX IF NOT EXISTS idx_pas_ledger_gene ON pas_ledger(run_id, gene_id);
 CREATE INDEX IF NOT EXISTS idx_cell_ledger_run ON cell_ledger(run_id);

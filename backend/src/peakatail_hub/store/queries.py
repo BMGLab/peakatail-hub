@@ -16,6 +16,7 @@ migration knows what it's replacing.
 from __future__ import annotations
 
 import base64
+import json
 from dataclasses import dataclass
 from typing import Any
 
@@ -609,6 +610,121 @@ def umap_color_available(con: duckdb.DuckDBPyConnection, run_id: str, color: str
 
 
 # --------------------------------------------------------------------------
+# run -> datasets -> results (2026-08-13 multi-dataset fix, task brief item 4)
+#
+# A run truthfully has MULTIPLE results: one clustering per dataset
+# (umap_points, now indexed per-dataset -- see index/indexer.py::_umap_points_df)
+# and, for cohort runs, a B3_switch analysis per celltype (diff/length/trend).
+# This section answers "what datasets/results does run X actually have" from
+# what's really indexed, rather than assuming a single-dataset/single-result
+# shape.
+# --------------------------------------------------------------------------
+
+
+def list_run_datasets(con: duckdb.DuckDBPyConnection, run_id: str) -> list[dict[str, Any]]:
+    """Every dataset with indexed UMAP points for this run, with a cheap
+    per-dataset cell count and cluster count. `umap_points.dataset_id` is
+    the only per-dataset-reliable column indexed today (cell_ledger is
+    gated behind HUB_INDEX_LEDGERS and mostly skipped for real runs) --
+    this is deliberately sourced from there, not `runs.n_datasets` (a
+    single aggregate count with no per-dataset identity).
+    """
+    rows = con.execute(
+        """
+        SELECT dataset_id, count(*) AS n_cells, count(DISTINCT leiden) AS n_clusters
+        FROM umap_points
+        WHERE run_id = ? AND dataset_id IS NOT NULL
+        GROUP BY dataset_id
+        ORDER BY dataset_id
+        """,
+        [run_id],
+    ).fetchall()
+    return [{"dataset_id": r[0], "n_cells": r[1], "n_clusters": r[2]} for r in rows]
+
+
+def switch_summary(con: duckdb.DuckDBPyConnection, run_id: str) -> dict[str, Any]:
+    """Per-celltype rollup of every B3_switch result kind this run has:
+    diff (queried live from findings_long, tagged `arm LIKE 'switch_diff:%'`
+    by `_switch_diff_findings_df`), length (stat-only availability, see
+    `switch_availability` table docstring for why row counts aren't
+    ingested), and trend (the fully-ingested length-trend-across-stages
+    headline). One dict per celltype seen in ANY of the three sources, so a
+    celltype with e.g. only a trend result (no diff finding survived
+    thresholds) still shows up rather than being silently dropped.
+    """
+    diff_rows = con.execute(
+        """
+        SELECT celltype, strategy, count(*) AS n
+        FROM findings_long
+        WHERE run_id = ? AND arm LIKE 'switch_diff:%' AND celltype IS NOT NULL
+        GROUP BY celltype, strategy
+        """,
+        [run_id],
+    ).fetchall()
+    trend_rows = con.execute(
+        "SELECT celltype, n_stages, slope, spearman, direction, value_col, mean_by_stage "
+        "FROM switch_trend_summary WHERE run_id = ?",
+        [run_id],
+    ).fetchall()
+    length_rows = con.execute(
+        "SELECT celltype, subkind, file_size_bytes FROM switch_availability "
+        "WHERE run_id = ? AND kind = 'length'",
+        [run_id],
+    ).fetchall()
+    match_row = con.execute(
+        "SELECT file_path, file_size_bytes FROM switch_availability WHERE run_id = ? AND kind = 'match'",
+        [run_id],
+    ).fetchone()
+
+    by_celltype: dict[str, dict[str, Any]] = {}
+
+    def _entry(celltype: str) -> dict[str, Any]:
+        return by_celltype.setdefault(
+            celltype, {"celltype": celltype, "diff": {}, "length": {}, "trend": None}
+        )
+
+    for celltype, strategy, n in diff_rows:
+        _entry(celltype)["diff"][strategy] = n
+    for celltype, subkind, size in length_rows:
+        _entry(celltype)["length"][subkind] = {"file_size_bytes": size}
+    for celltype, n_stages, slope, spearman, direction, value_col, mean_by_stage in trend_rows:
+        _entry(celltype)["trend"] = {
+            "n_stages": n_stages,
+            "slope": slope,
+            "spearman": spearman,
+            "direction": direction,
+            "value_col": value_col,
+            "mean_by_stage": json.loads(mean_by_stage) if mean_by_stage else {},
+        }
+
+    return {
+        "run_id": run_id,
+        "celltypes": sorted(by_celltype.values(), key=lambda c: c["celltype"]),
+        "cluster_match": {"file_path": match_row[0], "file_size_bytes": match_row[1]} if match_row else None,
+    }
+
+
+def switch_trend_top_genes(
+    con: duckdb.DuckDBPyConnection, run_id: str, celltype: str, limit: int = 50
+) -> list[dict[str, Any]]:
+    """Top genes by |slope| for one celltype's length-trend-across-stages --
+    the per-gene drill-down behind the run-level `switch_summary` headline.
+    """
+    rows = con.execute(
+        """
+        SELECT gene_id, n_stages, slope, spearman, direction
+        FROM switch_trend_gene
+        WHERE run_id = ? AND celltype = ?
+        ORDER BY abs(slope) DESC NULLS LAST
+        LIMIT ?
+        """,
+        [run_id, celltype, limit],
+    ).fetchall()
+    cols = ["gene_id", "n_stages", "slope", "spearman", "direction"]
+    return [dict(zip(cols, row, strict=True)) for row in rows]
+
+
+# --------------------------------------------------------------------------
 # search
 # --------------------------------------------------------------------------
 
@@ -713,7 +829,10 @@ def touch_run_source(con: duckdb.DuckDBPyConnection, run_id: str, source_id: str
     con.execute("UPDATE runs SET source_id = ? WHERE run_id = ?", [source_id, run_id])
 
 
-_CHILD_TABLES = ("pas_ledger", "cell_ledger", "findings_long", "length_long", "umap_points")
+_CHILD_TABLES = (
+    "pas_ledger", "cell_ledger", "findings_long", "length_long", "umap_points",
+    "switch_trend_summary", "switch_trend_gene", "switch_availability",
+)
 
 
 def delete_source_cascade(con: duckdb.DuckDBPyConnection, source_id: str) -> list[str]:

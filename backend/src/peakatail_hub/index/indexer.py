@@ -44,6 +44,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import duckdb
+import numpy as np
 import pandas as pd
 
 from peakatail_contract import ContractValidationError
@@ -132,7 +133,10 @@ def _existing_fingerprints(con: duckdb.DuckDBPyConnection, run_id: str) -> tuple
 
 
 def _delete_run(con: duckdb.DuckDBPyConnection, run_id: str) -> None:
-    for table in ("runs", "pas_ledger", "cell_ledger", "findings_long", "length_long", "umap_points"):
+    for table in (
+        "runs", "pas_ledger", "cell_ledger", "findings_long", "length_long", "umap_points",
+        "switch_trend_summary", "switch_trend_gene", "switch_availability",
+    ):
         con.execute(f"DELETE FROM {table} WHERE run_id = ?", [run_id])  # noqa: S608 -- table name from fixed whitelist above
 
 
@@ -159,6 +163,119 @@ def _pas_ledger_df(run_id: str, run: Run) -> pd.DataFrame:
             }
             for r in rows
         ]
+    )
+
+
+def _pas_summit_pos(start: int, end: int, strand: str) -> int:
+    """Strand-aware 3'-summit position from a BED interval -- see
+    `peakatail_contract.ids.pas_summit_pos` (duplicated here, not imported,
+    to keep this indexer's annotatedpas.bed loader a pure pandas/numpy
+    vectorized pass rather than a per-row Python call into the contract
+    package for 100k+ rows)."""
+    return int(end) - 1 if strand == "+" else int(start)
+
+
+def _pas_annot_df(run_id: str, run_dir: Path) -> pd.DataFrame:
+    """Real-run PAS+gene source: `<run_dir>/annotatedpas.bed`.
+
+    FINDING (2026-08-13, hub multi-dataset investigation): on every real
+    engine run inspected (B1_cohort_full, grid/*, reannotate/*),
+    `provenance/pas_ledger.tsv` is an EMPTY STUB -- present but with blank
+    chrom/start/end/gene_id (engine provenance is wired incrementally, see
+    `index_run`'s existing HUB_INDEX_LEDGERS note). `annotatedpas.bed`, by
+    contrast, is the real final annotated-PAS artifact the engine always
+    writes: tab-separated, no header, columns `chrom, start, end, pas_id,
+    gene_id, gene_symbol, strand, <tier_rank>, tier_label` (verified against
+    real output, e.g. `1  928219  928229  144  ENSG00000187634  SAMD11  +  0
+    TIER_1`) -- 9 columns on every run inspected, but this reader tolerates
+    8 (older/other runs may omit the trailing numeric tier-rank column) by
+    treating the LAST column as the tier label unconditionally.
+
+    Returns rows shaped exactly like `_pas_ledger_df`'s output (same column
+    set, insertable into the same `pas_ledger` table) so every existing
+    pas_ledger-backed endpoint (PAS browser, Genes browser, geneview
+    coordinates, gene_pas_span, search) lights up with real data with zero
+    downstream code changes. Caveats, documented rather than hidden:
+
+    * `dropped_at` is always `''` (survived) -- annotatedpas.bed only lists
+      PAS that made it through gene assignment; no drop-site provenance is
+      available from this source (same gap `qc_funnel`'s gate_note already
+      describes for the real ledger).
+    * `unified_pas_id` is set to the bed's own `pas_id` (col 4), which is
+      the RUN-level unified id (post pas_merge/atlas-snap). Per-dataset
+      `clusters.h5ad` var_names are a DIFFERENT, dataset-LOCAL pas_id space
+      (pre-unify) -- so `unified_pas_id` from this source will generally
+      NOT resolve directly against a given dataset's h5ad var_names for a
+      multi-dataset run. `genes.py`'s cluster-tracks/`gene_counts` joins
+      already degrade gracefully (empty tracks, not a 500) when a var_name
+      isn't present -- this is a known, documented gap, not a crash risk.
+      Reconciling the two id spaces needs the engine's own
+      `unified/pas_uid.tsv` / `unified/multi_sample_pas_mapping.tsv`
+      sidecars and is out of this fix's scope.
+    * `orig_pas_key`/`snap_distance_bp`/`gene_distance_bp` have no source in
+      this file; `orig_pas_key` falls back to the bed `pas_id`, the other
+      two stay `None`.
+
+    Returns an empty DataFrame (never raises) if `annotatedpas.bed` doesn't
+    exist for this run -- callers fall back to whatever `_pas_ledger_df`
+    already produced (fixture runs, which have no annotatedpas.bed but do
+    have a real provenance ledger).
+    """
+    path = run_dir / "annotatedpas.bed"
+    if not path.exists():
+        return pd.DataFrame()
+    try:
+        raw = pd.read_csv(
+            path,
+            sep="\t",
+            header=None,
+            dtype=str,
+            keep_default_na=False,
+            engine="c",
+        )
+    except Exception as exc:  # noqa: BLE001 -- a malformed bed must not abort indexing
+        logger.warning("run_id=%s: annotatedpas.bed at %s unreadable, skipping (%s)", run_id, path, exc)
+        return pd.DataFrame()
+    if raw.shape[1] < 8:
+        logger.warning(
+            "run_id=%s: annotatedpas.bed at %s has %d columns (<8 expected: chrom,start,end,pas_id,gene_id,"
+            "gene_symbol,strand,tier[,tier_label]), skipping",
+            run_id, path, raw.shape[1],
+        )
+        return pd.DataFrame()
+
+    chrom = raw[0].astype(str)
+    start = raw[1].astype(np.int64)
+    end = raw[2].astype(np.int64)
+    pas_id = raw[3].astype(str)
+    gene_id = raw[4].astype(str)
+    strand = raw[6].astype(str)
+    # Last column is the tier label ("TIER_1"/.../"INTERGENIC") on every real
+    # run inspected, whether the file has 8 or 9 columns.
+    tier_label = raw[raw.shape[1] - 1].astype(str)
+
+    pos = np.where(strand.to_numpy() == "+", end.to_numpy() - 1, start.to_numpy())
+    pas_uid = chrom.str.cat(pd.Series(pos, index=raw.index).astype(str), sep=":").str.cat(strand, sep=":")
+
+    n = len(raw)
+    return pd.DataFrame(
+        {
+            "run_id": [run_id] * n,
+            "pas_uid": pas_uid,
+            "orig_pas_key": pas_id,
+            "chrom": chrom,
+            "start": start,
+            "end": end,
+            "strand": strand,
+            "unified_pas_id": pas_id,
+            "snap_distance_bp": pd.array([None] * n, dtype="Int64"),
+            "gene_id": gene_id,
+            "gene_distance_bp": pd.array([None] * n, dtype="Int64"),
+            "tier": tier_label,
+            "last_stage": ["annotated"] * n,
+            "dropped_at": [""] * n,
+            "drop_reason": [None] * n,
+        }
     )
 
 
@@ -215,6 +332,195 @@ def _findings_df(run_id: str, run: Run) -> pd.DataFrame:
     )
 
 
+#: Exact column set/order of the `findings_long` table (minus `run_id`,
+#: added separately) -- shared by `_findings_df` (via pydantic) above and
+#: `_switch_diff_findings_df` below (which reads the parquet directly, no
+#: pydantic round-trip, so it must match this list by hand).
+_FINDINGS_TABLE_COLUMNS = [
+    "finding_uid", "pas_uid", "gene_id", "canonical_cluster", "comparison_cluster",
+    "celltype", "strategy", "arm", "direction", "utr_class",
+    "qvalue", "pvalue", "delta_proportion", "log2fc", "odds_ratio",
+    "n_cells", "n_reads", "n_cells_subject", "n_cells_comparison",
+    "n_reads_subject", "n_reads_comparison",
+]
+
+
+def _switch_diff_findings_df(run_id: str, run_dir: Path) -> pd.DataFrame:
+    """Real-run switch-diff results source:
+    `B3_switch/diff/<celltype>/<strategy>/differential/switch_diff_long.parquet`.
+
+    FINDING (2026-08-13): a real cohort run's `findings_long.parquet` (the
+    engine E5 artifact `_findings_df` reads) does not exist at the run root
+    -- switch-diff results instead live per-celltype-per-strategy under
+    `B3_switch/diff/`. Each `switch_diff_long.parquet` there is ALREADY
+    shaped almost exactly like `FindingRow`/the `findings_long` table (same
+    21 columns, verified against real output) plus one extra
+    `direction_basis` column this table doesn't have (dropped here). Reading
+    these directly and appending them to `findings_df` means the existing
+    Findings browser / geneview overlay / audit trail all light up with real
+    switch-diff data for zero further code changes -- this is the most
+    direct way to surface "B3_switch results as first-class results of the
+    run" for the diff dimension (task brief item 4).
+
+    Two real-data gaps handled explicitly, not silently:
+    * `celltype` is `None` in the parquet itself (the stratification is
+      encoded only by which directory the file lives under) -- backfilled
+      here from the `<celltype>` path segment.
+    * `finding_uid` as minted by the engine does NOT include celltype (see
+      `peakatail_contract.ids.finding_uid` -- only arm/strategy/
+      resolved_label(=cluster)/var_name/pas_uid), so the SAME finding_uid
+      can legitimately recur across different celltype directories (the
+      same PAS x cluster-pair x strategy combination tested within more
+      than one stratum). Left as-is (not deduplicated/renamed): downstream
+      consumers that filter by `celltype` (the Findings browser, geneview's
+      `clusters` filter) still see the right row; only a bare `GET
+      /findings/{finding_uid}` single-row lookup could return an
+      arbitrary-but-plausible one of several celltype-variants sharing an
+      id -- documented here rather than hidden, not worth a synthetic
+      re-keying scheme for a browse-first UI.
+
+    Returns an empty DataFrame (never raises) when `B3_switch/diff` doesn't
+    exist, is empty, or a given file fails to read (logged, skipped --
+    one bad celltype/strategy must not blank the whole run's findings).
+    """
+    diff_root = run_dir / "B3_switch" / "diff"
+    if not diff_root.is_dir():
+        return pd.DataFrame()
+    frames: list[pd.DataFrame] = []
+    for parquet_path in sorted(diff_root.glob("*/*/differential/switch_diff_long.parquet")):
+        celltype = parquet_path.parents[2].name  # .../diff/<celltype>/<strategy>/differential/file.parquet
+        try:
+            df = pd.read_parquet(parquet_path)
+        except Exception as exc:  # noqa: BLE001 -- one bad file must not abort the whole run
+            logger.warning("run_id=%s: switch diff parquet %s unreadable, skipping (%s)", run_id, parquet_path, exc)
+            continue
+        missing = [c for c in _FINDINGS_TABLE_COLUMNS if c not in df.columns]
+        if missing:
+            logger.warning(
+                "run_id=%s: switch diff parquet %s missing expected columns %s, skipping",
+                run_id, parquet_path, missing,
+            )
+            continue
+        df = df[_FINDINGS_TABLE_COLUMNS].copy()
+        df["celltype"] = df["celltype"].where(df["celltype"].notna() & (df["celltype"] != ""), celltype)
+        df.insert(0, "run_id", run_id)
+        frames.append(df)
+    if not frames:
+        return pd.DataFrame()
+    return pd.concat(frames, ignore_index=True)
+
+
+def _switch_trend_dfs(run_id: str, run_dir: Path) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Real-run 3'UTR-length-trend-across-stages source (the professor
+    headline finding): `B3_switch/trend/<celltype>/length_trend.json`
+    (run-x-celltype summary: slope/spearman/direction/mean_by_stage) and
+    `length_trend_by_gene.tsv` (per-gene rows, a few thousand per celltype --
+    cheap to fully ingest, unlike B3_switch/length's per-cell files, see
+    `_switch_availability_df`). Returns `(summary_df, gene_df)`, both
+    possibly empty (never raises) when `B3_switch/trend` doesn't exist.
+    """
+    trend_root = run_dir / "B3_switch" / "trend"
+    if not trend_root.is_dir():
+        return pd.DataFrame(), pd.DataFrame()
+    summary_rows: list[dict] = []
+    gene_frames: list[pd.DataFrame] = []
+    for celltype_dir in sorted(p for p in trend_root.iterdir() if p.is_dir()):
+        celltype = celltype_dir.name
+        json_path = celltype_dir / "length_trend.json"
+        if json_path.exists():
+            try:
+                summary = json.loads(json_path.read_text())
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("run_id=%s: %s unreadable, skipping (%s)", run_id, json_path, exc)
+                summary = None
+            if summary is not None:
+                summary_rows.append(
+                    {
+                        "run_id": run_id,
+                        "celltype": celltype,
+                        "n_stages": summary.get("n_stages"),
+                        "slope": summary.get("slope"),
+                        "spearman": summary.get("spearman"),
+                        "direction": summary.get("direction"),
+                        "value_col": summary.get("value_col"),
+                        "mean_by_stage": json.dumps(summary.get("mean_by_stage") or {}),
+                    }
+                )
+        gene_path = celltype_dir / "length_trend_by_gene.tsv"
+        if gene_path.exists():
+            try:
+                gdf = pd.read_csv(gene_path, sep="\t")
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("run_id=%s: %s unreadable, skipping (%s)", run_id, gene_path, exc)
+                continue
+            keep = [c for c in ("gene_id", "n_stages", "slope", "spearman", "direction") if c in gdf.columns]
+            gdf = gdf[keep].copy()
+            gdf.insert(0, "celltype", celltype)
+            gdf.insert(0, "run_id", run_id)
+            gene_frames.append(gdf)
+    summary_df = pd.DataFrame(summary_rows)
+    gene_df = pd.concat(gene_frames, ignore_index=True) if gene_frames else pd.DataFrame()
+    return summary_df, gene_df
+
+
+def _switch_availability_df(run_id: str, run_dir: Path) -> pd.DataFrame:
+    """Cheap (stat-only, never reads full file contents) inventory of what
+    switch-analysis results exist per celltype, for `B3_switch/length`
+    (classic/proportion/shannon -- NOT fully ingested: these are per-cell x
+    per-gene rows, seen up to ~112GB for a single 24-celltype cohort run, so
+    even a row count would mean reading gigabytes at index time, violating
+    "keep indexing fast and independent of data size") and `B3_switch/match`
+    (cluster_match.tsv, run-level, no celltype). Diff availability is not
+    duplicated here -- it's fully queryable from `findings_long` itself
+    (`arm LIKE 'switch_diff:%'`) once `_switch_diff_findings_df` has run.
+
+    One row per (celltype, kind, subkind) with the primary file's size in
+    bytes (`os.stat`, not a read) so a "results" view can show what's
+    available and roughly how big it is without ever opening the file.
+    """
+    switch_root = run_dir / "B3_switch"
+    if not switch_root.is_dir():
+        return pd.DataFrame()
+    rows: list[dict] = []
+
+    length_root = switch_root / "length"
+    _length_primary = {"classic": "pdui_classic.tsv", "proportion": "proportion.tsv", "shannon": "entropy_shannon.tsv"}
+    if length_root.is_dir():
+        for celltype_dir in sorted(p for p in length_root.iterdir() if p.is_dir()):
+            for strategy_dir in sorted(p for p in celltype_dir.iterdir() if p.is_dir()):
+                fname = _length_primary.get(strategy_dir.name)
+                fpath = (strategy_dir / fname) if fname else None
+                if fpath is None or not fpath.exists():
+                    candidates = sorted(strategy_dir.glob("*.tsv"))
+                    fpath = candidates[0] if candidates else None
+                size = fpath.stat().st_size if fpath is not None and fpath.exists() else None
+                rows.append(
+                    {
+                        "run_id": run_id,
+                        "celltype": celltype_dir.name,
+                        "kind": "length",
+                        "subkind": strategy_dir.name,
+                        "file_path": str(fpath.relative_to(run_dir)) if fpath is not None else None,
+                        "file_size_bytes": size,
+                    }
+                )
+
+    match_path = switch_root / "match" / "cluster_match.tsv"
+    if match_path.exists():
+        rows.append(
+            {
+                "run_id": run_id,
+                "celltype": None,
+                "kind": "match",
+                "subkind": None,
+                "file_path": str(match_path.relative_to(run_dir)),
+                "file_size_bytes": match_path.stat().st_size,
+            }
+        )
+
+    return pd.DataFrame(rows)
+
+
 def _length_df(run_id: str, run: Run) -> pd.DataFrame:
     rows = run.length_rows()
     return pd.DataFrame(
@@ -236,17 +542,18 @@ def _length_df(run_id: str, run: Run) -> pd.DataFrame:
     )
 
 
-def _umap_points_df(run_id: str, run: Run) -> pd.DataFrame:
-    """The ONE place (besides gene_counts()) this indexer touches
-    clusters.h5ad -- via `Run.open_clusters_h5ad()`, never scattered
-    elsewhere (task brief: "the ONE place in the indexer that touches the
-    heavy h5ad reader — call it explicitly, don't scatter h5ad opens
-    elsewhere").
+def _umap_df_from_adata(run_id: str, dataset_id: str | None, adata: Any) -> pd.DataFrame:
+    """Build one dataset's slice of `umap_points` from an already-open
+    (backed) AnnData. Split out of `_umap_points_df` so it can be called once
+    per dataset on a multi-dataset run (see there) as well as once for a
+    single-dataset/fixture run.
     """
-    adata = run.open_clusters_h5ad()
     obsm_key = "X_umap" if "X_umap" in adata.obsm else next(iter(adata.obsm.keys()), None)
     if obsm_key is None:
-        logger.warning("run_id=%s: clusters.h5ad has no obsm embedding, umap_points will be empty", run_id)
+        logger.warning(
+            "run_id=%s dataset_id=%s: clusters.h5ad has no obsm embedding, umap_points will be empty",
+            run_id, dataset_id,
+        )
         xy = None
     else:
         xy = adata.obsm[obsm_key]
@@ -259,10 +566,19 @@ def _umap_points_df(run_id: str, run: Run) -> pd.DataFrame:
             return [None if pd.isna(v) else str(v) for v in obs[name]]
         return [None] * n
 
-    dataset_ids = _obs_col("dataset_id")
-    if all(d is None for d in dataset_ids):
-        # Fall back to parsing "{dataset_id}:{barcode}" out of cell_uid.
-        dataset_ids = [str(cid).split(":", 1)[0] for cid in adata.obs_names]
+    dataset_ids: list[str | None]
+    if dataset_id is not None:
+        # Real per-dataset clusters.h5ad (07_clustering/<dataset_id>/) has no
+        # obs['dataset_id'] column of its own -- the caller already knows
+        # which dataset this h5ad belongs to (it opened it via
+        # clusters_h5ad_path(dataset_id=...)), so trust that over any
+        # same-named obs column.
+        dataset_ids = [dataset_id] * n
+    else:
+        dataset_ids = _obs_col("dataset_id")
+        if all(d is None for d in dataset_ids):
+            # Fall back to parsing "{dataset_id}:{barcode}" out of cell_uid.
+            dataset_ids = [str(cid).split(":", 1)[0] for cid in adata.obs_names]
 
     return pd.DataFrame(
         {
@@ -280,6 +596,69 @@ def _umap_points_df(run_id: str, run: Run) -> pd.DataFrame:
             "sample": _obs_col("sample"),
         }
     )
+
+
+def _umap_points_df(run_id: str, run: Run) -> pd.DataFrame:
+    """The ONE place (besides gene_counts()) this indexer touches
+    clusters.h5ad -- via `Run.open_clusters_h5ad()`, never scattered
+    elsewhere (task brief: "the ONE place in the indexer that touches the
+    heavy h5ad reader — call it explicitly, don't scatter h5ad opens
+    elsewhere").
+
+    MULTI-DATASET FIX (2026-08-13): a real cohort run (`B1_cohort_full`,
+    grid/*) has NO single unified `clusters.h5ad` -- clustering runs
+    per-dataset (`07_clustering/<dataset_id>/clusters.h5ad`, one per
+    `manifest.datasets` entry, 6-17 on the runs seen so far). Calling
+    `open_clusters_h5ad()` with no `dataset_id` on such a run hits
+    `clusters_h5ad_path`'s ">1 candidate, dataset_id=None" ambiguity guard
+    and raises -- which `index_run` used to catch and silently leave
+    `umap_points` empty for the whole run. Fixed by iterating every
+    registered dataset explicitly and opening its own h5ad
+    (`open_clusters_h5ad(dataset_id=ds)`), tagging each with that
+    `dataset_id`, and concatenating -- so the UMAP view gets every dataset's
+    points, filterable via `?dataset_id=`. A single-dataset/fixture run
+    (`manifest.datasets` empty, e.g. the packages/contract fixture) falls
+    back to the original bare `open_clusters_h5ad()` call.
+
+    Per-dataset opens are independent and best-effort: one dataset's h5ad
+    being missing/unreadable is logged and skipped, not fatal to the whole
+    run's UMAP coverage (matches this indexer's existing "umap indexing is
+    best-effort" posture for real runs).
+
+    GUARD (found via the contract fixture, which registers 2
+    `manifest.datasets` entries but only ONE shared `clusters.h5ad`
+    artifact): naively looping `manifest.datasets` and calling
+    `open_clusters_h5ad(dataset_id=ds)` for each would, in that shape,
+    resolve every dataset_id to the SAME single file (`clusters_h5ad_path`
+    only scopes by dataset_id when there's more than one h5ad candidate to
+    disambiguate between) -- duplicating every cell once per dataset entry.
+    So the per-dataset loop only runs when the manifest actually registers
+    MORE THAN ONE h5ad clustering artifact; otherwise this falls back to the
+    single bare `open_clusters_h5ad()` open, exactly like the pre-fix
+    behavior, regardless of how many datasets are listed.
+    """
+    from peakatail_contract.models import Format  # local import: avoids a module-load-order dependency
+
+    h5ad_candidates = [
+        a for a in run.manifest.artifacts
+        if a.format == Format.H5AD and ("cluster" in a.stage.lower() or a.schema_name == "clusters.h5ad")
+    ]
+    dataset_ids = [d.dataset_id for d in run.manifest.datasets]
+    if len(h5ad_candidates) <= 1 or not dataset_ids:
+        adata = run.open_clusters_h5ad()
+        return _umap_df_from_adata(run_id, None, adata)
+
+    frames: list[pd.DataFrame] = []
+    for ds in dataset_ids:
+        try:
+            adata = run.open_clusters_h5ad(dataset_id=ds)
+        except Exception as exc:  # noqa: BLE001 -- one bad dataset must not blank the whole run's UMAP
+            logger.warning("run_id=%s dataset_id=%s: clusters.h5ad open failed, skipping (%s)", run_id, ds, exc)
+            continue
+        frames.append(_umap_df_from_adata(run_id, ds, adata))
+    if not frames:
+        return pd.DataFrame()
+    return pd.concat(frames, ignore_index=True)
 
 
 def _insert_df(con: duckdb.DuckDBPyConnection, table: str, df: pd.DataFrame) -> None:
@@ -389,13 +768,34 @@ def index_run(con: duckdb.DuckDBPyConnection, run_dir: Path, source_id: str | No
     else:
         pas_df = pd.DataFrame()
         cell_df = pd.DataFrame()
+    # Real-run PAS+gene source override (independent of HUB_INDEX_LEDGERS --
+    # annotatedpas.bed is cheap, ~100k-200k rows read natively, not the
+    # 6M-row provenance ledgers that flag gates). See `_pas_annot_df`
+    # docstring: on every real run inspected, provenance/pas_ledger.tsv is
+    # an empty stub (blank coordinates/gene_id) while annotatedpas.bed is
+    # the real, final annotated-PAS artifact -- prefer it whenever present
+    # so the PAS/Genes browsers and geneview show real data instead of an
+    # empty table. Fixture/demo runs (no annotatedpas.bed) keep whatever
+    # `_pas_ledger_df` produced above (or stay empty if ledgers were skipped).
+    annot_df = _pas_annot_df(run_id, run_dir)
+    if not annot_df.empty:
+        pas_df = annot_df
     findings_df = _findings_df(run_id, run)
+    switch_findings_df = _switch_diff_findings_df(run_id, run_dir)
+    if not switch_findings_df.empty:
+        findings_df = (
+            pd.concat([findings_df, switch_findings_df], ignore_index=True)
+            if not findings_df.empty
+            else switch_findings_df
+        )
     length_df = _length_df(run_id, run)
     try:
         umap_df = _umap_points_df(run_id, run)
     except Exception as _umap_e:  # multi-dataset runs: umap indexing is best-effort
         logger.warning("run_id=%s: umap points skipped (%s)", run_id, _umap_e)
         umap_df = pd.DataFrame()
+    switch_trend_summary_df, switch_trend_gene_df = _switch_trend_dfs(run_id, run_dir)
+    switch_availability_df = _switch_availability_df(run_id, run_dir)
 
     _stats = _run_headline_stats(run_dir, run, len(findings_df), len(length_df))
     con.execute("BEGIN TRANSACTION")
@@ -406,6 +806,9 @@ def index_run(con: duckdb.DuckDBPyConnection, run_dir: Path, source_id: str | No
         _insert_df(con, "findings_long", findings_df)
         _insert_df(con, "length_long", length_df)
         _insert_df(con, "umap_points", umap_df)
+        _insert_df(con, "switch_trend_summary", switch_trend_summary_df)
+        _insert_df(con, "switch_trend_gene", switch_trend_gene_df)
+        _insert_df(con, "switch_availability", switch_availability_df)
         con.execute(
             """
             INSERT INTO runs (
