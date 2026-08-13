@@ -291,15 +291,43 @@ def _run_ema(cfg: Config, h5ad: Path, gene_id: str, pasbed: Path, gtf: Path | No
         shutil.rmtree(request_tmp, ignore_errors=True)
 
 
-def _move_into_cache(figures_dir: Path, gene_id: str, cache_dir: Path) -> dict[str, Path]:
+def _move_into_cache(figures_dir: Path, gene_id: str, dataset_id: str, cache_dir: Path) -> dict[str, Path]:
+    """Move ema's per-gene output out of the (about-to-be-deleted) scratch
+    `figures_dir` into the deterministic cache dir. Caller is responsible
+    for cleaning up `figures_dir`'s scratch tree afterwards regardless of
+    outcome (see `generate_geneview`) -- this function itself never deletes
+    anything, so a raised error here always leaves the scratch output
+    inspectable for debugging until the caller's `finally` runs.
+    """
     stem = f"gene_{gene_id}"
+    html_src = figures_dir / _EMA_OUTPUT_SUFFIXES["html"].format(stem=stem)
+    if not html_src.exists():
+        # A real, observed ema behavior (not a bug in this worker): ema
+        # exits 0 with "Gene <id> has no PAS in the AnnData or pasbed —
+        # skipping" and writes nothing for that gene when it isn't present
+        # in the CHOSEN dataset's clusters.h5ad var_names/pasbed -- distinct
+        # per-dataset PAS-calling means a gene_id present in one dataset's
+        # h5ad can genuinely be absent from another's. Surfaced as a clear
+        # 404 (not a generic 500 "file missing") so the hub backend/frontend
+        # can show "no PAS for this gene in this dataset" rather than a
+        # scary unexplained error.
+        raise GeneviewWorkerError(
+            f"ema reported no renderable output for gene_id={gene_id!r} in dataset_id={dataset_id!r} -- "
+            "most likely this gene has no PAS in that dataset's clusters.h5ad/pasbed (PAS calling is "
+            "per-dataset, so this can differ from other datasets in the same run). Try a different "
+            "dataset_id.",
+            status=404,
+        )
+
     cache_dir.mkdir(parents=True, exist_ok=True)
     result: dict[str, Path] = {}
     for kind, pattern in _EMA_OUTPUT_SUFFIXES.items():
         src = figures_dir / pattern.format(stem=stem)
         if not src.exists():
             raise GeneviewWorkerError(
-                f"ema succeeded but expected output {src.name} is missing from {figures_dir}", status=500
+                f"ema wrote {html_src.name} but not {src.name} for gene_id={gene_id!r} -- partial/unexpected "
+                f"output in {figures_dir}",
+                status=500,
             )
         dst = cache_dir / src.name
         shutil.move(str(src), str(dst))
@@ -311,9 +339,6 @@ def _move_into_cache(figures_dir: Path, gene_id: str, cache_dir: Path) -> dict[s
         result["pas_distances_csv"] = csv_dst
     else:
         result["pas_distances_csv"] = None
-    # request_scratch (figures_dir's grandparent, "out_<ts>") -- remove the
-    # whole per-request scratch tree, not just `figures/`.
-    shutil.rmtree(figures_dir.parent.parent, ignore_errors=True)
     return result
 
 
@@ -343,7 +368,14 @@ def generate_geneview(cfg: Config, body: dict) -> dict:
 
         t0 = time.monotonic()
         figures_dir = _run_ema(cfg, h5ad, gene_id, pasbed, gtf, cluster_key)
-        files = _move_into_cache(figures_dir, gene_id, cache_dir)
+        try:
+            files = _move_into_cache(figures_dir, gene_id, dataset_id, cache_dir)
+        finally:
+            # request_scratch (figures_dir's grandparent, "out_<ts>") -- always
+            # removed, success or failure (a failure here -- e.g. gene has no
+            # PAS in this dataset -- must not leak scratch dirs any more than
+            # a success does).
+            shutil.rmtree(figures_dir.parent.parent, ignore_errors=True)
         duration = time.monotonic() - t0
         return _response(gene_id, dataset_id, cluster_key, run_root, files, cached=False, duration_sec=duration)
 

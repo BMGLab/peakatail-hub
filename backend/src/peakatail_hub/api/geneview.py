@@ -49,11 +49,64 @@ def _resolve_run(con: duckdb.DuckDBPyConnection, run_id: str | None) -> dict:
     )
 
 
-def _generate_or_502(run_row: dict, gene_id: str, dataset_id: str | None, force: bool) -> dict:
-    try:
-        return request_geneview(run_row["root"], gene_id, dataset_id=dataset_id, force=force)
-    except GeneviewWorkerError as exc:
-        raise HTTPException(status_code=exc.status, detail=str(exc)) from exc
+#: Cap on how many datasets one request will try before giving up -- bounds
+#: worst-case latency on a cold cache (each attempt is a real ~10s `ema`
+#: subprocess run) while still covering the common "this gene's PAS calling
+#: only produced a var for it in a couple of the cohort's 17 datasets" case
+#: (see `_generate_or_502` docstring).
+_MAX_DATASET_ATTEMPTS = 3
+
+
+def _candidate_dataset_ids(con: duckdb.DuckDBPyConnection, run_id: str, requested: str | None) -> list[str | None]:
+    """An explicit `dataset_id` is tried alone (no auto-fallback -- the
+    caller asked for that one specifically). Otherwise, largest-cell-count
+    datasets first (see `_generate_or_502`), falling back to `[None]` (the
+    geneview worker's own alphabetical-first default) when this run has no
+    indexed per-dataset UMAP points to rank by (e.g. an older/fixture run
+    shape) -- never an empty list, so callers always get at least one try.
+    """
+    if requested is not None:
+        return [requested]
+    datasets = queries.list_run_datasets(con, run_id)
+    if not datasets:
+        return [None]
+    ranked = sorted(datasets, key=lambda d: d["n_cells"], reverse=True)
+    return [d["dataset_id"] for d in ranked[:_MAX_DATASET_ATTEMPTS]]
+
+
+def _generate_or_502(con: duckdb.DuckDBPyConnection, run_row: dict, gene_id: str, dataset_id: str | None, force: bool) -> dict:
+    """Ask the geneview worker to (re)generate/serve the figure, trying more
+    than one dataset when the caller didn't pin one.
+
+    FINDING (2026-08-13/14, verified against real B1_cohort_full data): PAS
+    calling is per-dataset, so a `gene_id` present in `annotatedpas.bed`
+    (the run-level unified annotation) can genuinely have ZERO surviving PAS
+    in a GIVEN dataset's `clusters.h5ad` -- ema exits 0 but renders nothing
+    for it ("Gene <id> has no PAS in the AnnData or pasbed — skipping"), and
+    the worker turns that into a 404 (see geneview_worker.py's
+    `_move_into_cache`). Picking the worker's naive "alphabetically first
+    dataset" default missed real differential genes outright in testing
+    (e.g. a fisher-diff hit only expressed in Met-stage datasets, tried
+    against a Normal-stage dataset first). Trying the
+    `_MAX_DATASET_ATTEMPTS` largest-by-cell-count datasets in turn (largest
+    first, as a cheap "most likely to have this gene" heuristic -- no
+    per-gene PAS presence is indexed to do better without a real query)
+    fixes that for the common case without the cost/latency of concatenating
+    all datasets into one render.
+    """
+    last_error: GeneviewWorkerError | None = None
+    for candidate in _candidate_dataset_ids(con, run_row["run_id"], dataset_id):
+        try:
+            return request_geneview(run_row["root"], gene_id, dataset_id=candidate, force=force)
+        except GeneviewWorkerError as exc:
+            last_error = exc
+            if exc.status != 404:
+                # Not a "no PAS in this dataset" case (e.g. worker
+                # unreachable, ema crashed, timeout) -- retrying a different
+                # dataset won't help and only adds latency; fail fast.
+                break
+    assert last_error is not None  # _candidate_dataset_ids never returns []
+    raise HTTPException(status_code=last_error.status, detail=str(last_error))
 
 
 def _served_path(run_row: dict, relpath: str | None) -> Path | None:
@@ -76,7 +129,7 @@ def geneview_html(
     `<iframe>`, it is not meant to be parsed/re-rendered client-side.
     """
     run_row = _resolve_run(con, run_id)
-    result = _generate_or_502(run_row, gene_id, dataset_id, force)
+    result = _generate_or_502(con, run_row, gene_id, dataset_id, force)
     path = _served_path(run_row, result["files"]["html"])
     if path is None or not path.exists():
         raise HTTPException(
@@ -98,7 +151,7 @@ def geneview_png(
     """The real static matplotlib figure (same gene track + PAS-distance
     table as the plotly version, minus interactivity)."""
     run_row = _resolve_run(con, run_id)
-    result = _generate_or_502(run_row, gene_id, dataset_id, force)
+    result = _generate_or_502(con, run_row, gene_id, dataset_id, force)
     path = _served_path(run_row, result["files"]["png"])
     if path is None or not path.exists():
         raise HTTPException(
@@ -123,7 +176,7 @@ def geneview_meta(
     embedded figure, rather than relying on the user reading it off the
     rendered image."""
     run_row = _resolve_run(con, run_id)
-    result = _generate_or_502(run_row, gene_id, dataset_id, force)
+    result = _generate_or_502(con, run_row, gene_id, dataset_id, force)
     files = result["files"]
 
     meta: dict = {}
