@@ -12,8 +12,9 @@
 }
 
 .geneview-canvas__toolbar button {
-  padding: 4px 8px;
-  font-size: 12px;
+  padding: 7px 13px;
+  font-size: 13px;
+  font-weight: var(--fw-medium);
   border-radius: var(--radius-md);
   border: 1px solid var(--line);
   background: var(--bg-surface);
@@ -26,9 +27,9 @@
 }
 
 .geneview-canvas__locus {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--ink-body);
-  padding: 2px 8px;
+  padding: 4px 10px;
   border-radius: var(--radius-md);
   background: var(--bg-sunken);
 }
@@ -46,8 +47,12 @@
   background: var(--track-well);
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
-  padding: 8px;
-  overflow-x: auto;
+  padding: 10px;
+  overflow: auto;
+  /* Give the track well real presence -- the centerpiece should read like
+     the packaged gene-track figure, not a thumbnail squeezed above the
+     companion tables. It still grows past this to fit every cluster row. */
+  min-height: 460px;
 }
 
 .geneview-svg {
@@ -59,13 +64,13 @@
 }
 
 .geneview-svg__title {
-  font-size: 13px;
+  font-size: 16px;
   font-weight: var(--fw-semibold);
   fill: var(--track-ink);
 }
 
 .geneview-svg__row-label {
-  font-size: 10px;
+  font-size: 13px;
   fill: var(--track-label);
 }
 

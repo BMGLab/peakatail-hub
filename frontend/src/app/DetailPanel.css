@@ -8,6 +8,23 @@
   flex-direction: column;
 }
 
+/* Empty state: shrink to a slim rail so the main view (the geneview) gets
+   the space back. Expands to the full 320px automatically on selection. */
+.detail-panel--collapsed {
+  width: 26px;
+  overflow: hidden;
+}
+
+.detail-panel__rail-hint {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  white-space: nowrap;
+  margin: 12px auto;
+  font-size: 11px;
+  color: var(--text-dim);
+  letter-spacing: 0.02em;
+}
+
 .detail-panel__header {
   display: flex;
   align-items: center;

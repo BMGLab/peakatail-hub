@@ -343,12 +343,12 @@ const mockGeneListRows: GeneListRow[] = genes.map((g) => ({
 const mockAllPas: PasLedgerRow[] = genes.flatMap((g) => mockPasForGene(g.gene_id))
 
 export interface MockGenesBrowseParams {
-  q?: string
-  chrom?: string
-  start?: number
-  end?: number
-  cursor?: string
-  limit?: number
+  q?: string | undefined
+  chrom?: string | undefined
+  start?: number | undefined
+  end?: number | undefined
+  cursor?: string | undefined
+  limit?: number | undefined
 }
 
 export function mockGenesPage(params: MockGenesBrowseParams): MockPage<GeneListRow> {
@@ -364,9 +364,9 @@ export function mockGenesPage(params: MockGenesBrowseParams): MockPage<GeneListR
 }
 
 export interface MockBrowseParams {
-  q?: string
-  cursor?: string
-  limit?: number
+  q?: string | undefined
+  cursor?: string | undefined
+  limit?: number | undefined
 }
 
 export function mockPasPage(params: MockBrowseParams): MockPage<PasLedgerRow> {

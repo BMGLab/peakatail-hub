@@ -28,7 +28,7 @@ const EXON_HEIGHT_FRAC = 0.6
 export function IsoformTrack({ scale, isoforms, strand, height }: IsoformTrackProps) {
   if (isoforms.length === 0) {
     return (
-      <text x={4} y={height / 2} fontSize={10} fill="var(--track-tick)" dominantBaseline="middle">
+      <text x={4} y={height / 2} fontSize={12} fill="var(--track-tick)" dominantBaseline="middle">
         no isoform structure available for this run (GTF not configured)
       </text>
     )
@@ -88,7 +88,7 @@ export function IsoformTrack({ scale, isoforms, strand, height }: IsoformTrackPr
                 </rect>
               )
             })}
-            <text x={4} y={yCentre} fontSize={9} fill="var(--track-label)" dominantBaseline="middle">
+            <text x={4} y={yCentre} fontSize={11} fill="var(--track-label)" dominantBaseline="middle">
               {iso.transcript_id}
             </text>
           </g>

@@ -212,9 +212,13 @@ export function DetailPanel() {
   const navigate = useNavigate()
 
   if (!selected) {
+    // Collapse to a slim rail when empty so views (the geneview especially)
+    // get the ~320px back instead of it standing reserved-but-blank. The
+    // panel expands automatically the moment something is selected. The hint
+    // text stays in the DOM (vertical rail) so it's still discoverable.
     return (
-      <aside className="detail-panel" aria-label="Detail panel">
-        <div className="state-message">Nothing selected. Click a row, PAS, or cell to see details here.</div>
+      <aside className="detail-panel detail-panel--collapsed" aria-label="Detail panel">
+        <div className="detail-panel__rail-hint">Nothing selected — click a row, PAS, or cell for details</div>
       </aside>
     )
   }

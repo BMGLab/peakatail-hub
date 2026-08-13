@@ -21,6 +21,7 @@ export function GeneView() {
   const geneQuery = useGene(geneId ?? null, runId)
   const dataQuery = useGeneviewData(geneId ?? null, undefined, runId)
   const [layers, setLayers] = useState<GeneviewLayerState>(DEFAULT_LAYER_STATE)
+  const [layersOpen, setLayersOpen] = useState(true)
   const select = useSelectionStore((s) => s.select)
 
   const geneviewWindow = useGeneviewWindow(geneQuery.data)
@@ -76,7 +77,23 @@ export function GeneView() {
       </header>
 
       <div className="gene-view__body">
-        <LayerPanel state={layers} onChange={setLayers} />
+        {layersOpen ? (
+          <div className="gene-view__layers">
+            <button type="button" className="gene-view__layers-toggle" onClick={() => setLayersOpen(false)}>
+              ◀ Hide layers
+            </button>
+            <LayerPanel state={layers} onChange={setLayers} />
+          </div>
+        ) : (
+          <button
+            type="button"
+            className="gene-view__layers-show"
+            onClick={() => setLayersOpen(true)}
+            title="Show layer controls"
+          >
+            Layers ▸
+          </button>
+        )}
 
         <div className="gene-view__main">
           {/* span is null when the gene has zero surviving PAS -- the

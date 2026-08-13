@@ -153,23 +153,27 @@ export interface FindingsPage {
 // the TopBar location bar's chr:coords -> gene resolution.
 // ---------------------------------------------------------------------------
 
+// Optional fields are `T | undefined` (not bare `T?`) so callers can pass an
+// explicit `{ q: undefined, run_id: runId ?? undefined }` literal under
+// tsconfig's `exactOptionalPropertyTypes` -- the browse views build the param
+// object from possibly-undefined state, which a plain `q?: string` rejects.
 export interface GenesBrowseParams {
-  q?: string
+  q?: string | undefined
   /** Locus-overlap filter (not exact-match) -- resolves a raw chr:start-end
    * search to the gene(s) whose span overlaps it. All three optional. */
-  chrom?: string
-  start?: number
-  end?: number
-  run_id?: string
-  cursor?: string
-  limit?: number
+  chrom?: string | undefined
+  start?: number | undefined
+  end?: number | undefined
+  run_id?: string | undefined
+  cursor?: string | undefined
+  limit?: number | undefined
 }
 
 export interface BrowseParams {
-  q?: string
-  run_id?: string
-  cursor?: string
-  limit?: number
+  q?: string | undefined
+  run_id?: string | undefined
+  cursor?: string | undefined
+  limit?: number | undefined
 }
 
 export interface GenesBrowsePage {
@@ -407,13 +411,13 @@ export const api = {
   getGeneviewData(
     id: string,
     params?: {
-      start?: number
-      end?: number
-      lod?: number
-      clusters?: string[]
-      diff_strategies?: string[]
-      length_strategies?: string[]
-      run_id?: string
+      start?: number | undefined
+      end?: number | undefined
+      lod?: number | undefined
+      clusters?: string[] | undefined
+      diff_strategies?: string[] | undefined
+      length_strategies?: string[] | undefined
+      run_id?: string | undefined
     },
   ): Promise<GeneviewLayerData | null> {
     if (USE_MOCKS) return delay(mockGeneviewData(id))

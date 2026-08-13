@@ -29,6 +29,37 @@
   gap: 16px;
 }
 
+.gene-view__layers {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.gene-view__layers-toggle,
+.gene-view__layers-show {
+  font-size: 12px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-surface);
+  color: var(--text-dim);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+/* Collapsed: a slim vertical tab so the geneview gets the full width. */
+.gene-view__layers-show {
+  writing-mode: vertical-rl;
+  align-self: flex-start;
+  padding: 12px 6px;
+}
+
+.gene-view__layers-toggle:hover,
+.gene-view__layers-show:hover {
+  background: var(--bg-hover);
+}
+
 .gene-view__gates {
   display: flex;
   flex-wrap: wrap;

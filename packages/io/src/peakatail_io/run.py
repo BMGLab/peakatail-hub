@@ -240,8 +240,8 @@ class Run:
                     PasLedgerRow(
                         orig_pas_key=rec["orig_pas_key"],
                         chrom=rec["chrom"],
-                        start=int(rec["start"]),
-                        end=int(rec["end"]),
+                        start=_opt_int(rec["start"]),
+                        end=_opt_int(rec["end"]),
                         strand=rec["strand"],
                         unified_pas_id=rec["unified_pas_id"],
                         snap_distance_bp=_opt_int(rec["snap_distance_bp"]),
@@ -273,8 +273,8 @@ class Run:
                     CellLedgerRow(
                         barcode=rec["barcode"],
                         dataset_id=rec["dataset_id"],
-                        total_reads=int(rec["total_reads"]),
-                        n_pas=int(rec["n_pas"]),
+                        total_reads=_opt_int(rec["total_reads"]),
+                        n_pas=_opt_int(rec["n_pas"]),
                         dropped_at=rec["dropped_at"],
                         drop_reason=_opt_str(rec["drop_reason"]),
                         cluster=_opt_str(rec["cluster"]),
@@ -288,7 +288,7 @@ class Run:
         """Read `findings_long.parquet` into `FindingRow` objects."""
         path = self._resolve_artifact("FindingRow", "findings_long.parquet")
         if not path.exists():
-            raise RunReadError(f"findings_long.parquet not found at {path}")
+            return []
         df = pd.read_parquet(path)
         return [FindingRow.model_validate(rec) for rec in _parquet_records(df)]
 
@@ -296,7 +296,7 @@ class Run:
         """Read `length_long.parquet` into `LengthRow` objects."""
         path = self._resolve_artifact("LengthRow", "length_long.parquet")
         if not path.exists():
-            raise RunReadError(f"length_long.parquet not found at {path}")
+            return []
         df = pd.read_parquet(path)
         return [LengthRow.model_validate(rec) for rec in _parquet_records(df)]
 

@@ -41,10 +41,10 @@ export function ClusterProportionTrack({
     <g className="cluster-proportion-track">
       <line x1={0} y1={baselineY} x2={scale.pixelWidth} y2={baselineY} style={{ stroke: 'var(--track-baseline)' }} strokeWidth={0.8} />
       {/* y-axis ticks: 0 and yMax, matching the matplotlib reference's 0/0.5-ish scale */}
-      <text x={-6} y={baselineY} fontSize={8} style={{ fill: 'var(--track-tick)' }} textAnchor="end" dominantBaseline="middle">
+      <text x={-6} y={baselineY} fontSize={10} style={{ fill: 'var(--track-tick)' }} textAnchor="end" dominantBaseline="middle">
         0
       </text>
-      <text x={-6} y={baselineY - plotH} fontSize={8} style={{ fill: 'var(--track-tick)' }} textAnchor="end" dominantBaseline="middle">
+      <text x={-6} y={baselineY - plotH} fontSize={10} style={{ fill: 'var(--track-tick)' }} textAnchor="end" dominantBaseline="middle">
         {yMax.toFixed(2)}
       </text>
       <line x1={0} y1={baselineY - plotH} x2={0} y2={baselineY} style={{ stroke: 'var(--track-grid)' }} strokeWidth={0.6} />
@@ -78,7 +78,7 @@ export function ClusterProportionTrack({
               <text
                 x={x1 + w / 2}
                 y={baselineY - barH - 3}
-                fontSize={8}
+                fontSize={10}
                 style={{ fill: 'var(--track-ink)' }}
                 textAnchor="middle"
               >

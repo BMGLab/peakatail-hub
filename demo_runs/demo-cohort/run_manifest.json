@@ -1,0 +1,142 @@
+{
+  "artifacts": [
+    {
+      "entity_counts": {
+        "n_rows": 108,
+        "n_surviving": 108
+      },
+      "format": "tsv",
+      "path": "pas_ledger.tsv",
+      "schema_name": "PasLedgerRow",
+      "schema_version": "0.1.0",
+      "stage": "provenance"
+    },
+    {
+      "entity_counts": {
+        "n_rows": 180,
+        "n_surviving": 180
+      },
+      "format": "tsv",
+      "path": "cell_ledger.tsv",
+      "schema_name": "CellLedgerRow",
+      "schema_version": "0.1.0",
+      "stage": "provenance"
+    },
+    {
+      "entity_counts": {
+        "n_rows": 624
+      },
+      "format": "parquet",
+      "path": "findings_long.parquet",
+      "schema_name": "FindingRow",
+      "schema_version": "0.1.0",
+      "stage": "switch_diff"
+    },
+    {
+      "entity_counts": {
+        "n_rows": 2448
+      },
+      "format": "parquet",
+      "path": "length_long.parquet",
+      "schema_name": "LengthRow",
+      "schema_version": "0.1.0",
+      "stage": "switch_length"
+    },
+    {
+      "entity_counts": {
+        "n_obs": 180,
+        "n_vars": 108
+      },
+      "format": "h5ad",
+      "path": "clusters.h5ad",
+      "schema_name": "clusters.h5ad",
+      "schema_version": "0.1.0",
+      "stage": "clustering"
+    },
+    {
+      "entity_counts": {
+        "n_pas": 108
+      },
+      "format": "bed",
+      "path": "pasbed.bed",
+      "schema_name": "pasbed.bed",
+      "schema_version": "0.1.0",
+      "stage": "per_dataset_beds"
+    }
+  ],
+  "contract_version": "0.1.0",
+  "datasets": [
+    {
+      "bam_paths": [
+        "dsA.bam"
+      ],
+      "dataset_id": "dsA",
+      "label": "Demo cohort A (tumor epithelial) [SYNTHETIC]"
+    },
+    {
+      "bam_paths": [
+        "dsB.bam"
+      ],
+      "dataset_id": "dsB",
+      "label": "Demo cohort B (tumor epithelial) [SYNTHETIC]"
+    }
+  ],
+  "entity_counts": {
+    "n_cells": 180,
+    "n_datasets": 2,
+    "n_findings": 624,
+    "n_genes": 48,
+    "n_length_rows": 2448,
+    "n_pas": 108
+  },
+  "resolved_config": {
+    "args": {
+      "max_gene_distance": 5000,
+      "merge_strategy": "before",
+      "note": "SYNTHETIC DEMO DATA -- not a real experiment"
+    },
+    "directories": {
+      "atlas": null,
+      "atlas_distance": null,
+      "bam_dir": null,
+      "datasets": [
+        {
+          "bams": [
+            "dsA.bam"
+          ],
+          "id": "dsA"
+        },
+        {
+          "bams": [
+            "dsB.bam"
+          ],
+          "id": "dsB"
+        }
+      ],
+      "filenames": {},
+      "gtf_dir": "genes.gtf",
+      "output_dir": "/home/user/D/peakatail-hub/demo_runs/demo-cohort"
+    },
+    "filters": {
+      "min_cells": 2,
+      "min_genes": null,
+      "min_pas_per_cell": 2,
+      "min_read": 50
+    },
+    "variables": {
+      "barcode_tag": "CB",
+      "cb_len": 16,
+      "default_threshold": 0.05,
+      "merge_len": 24,
+      "min_pas_prominence": 2,
+      "min_pas_spacing": 10,
+      "seqlen": 100
+    }
+  },
+  "root": "/home/user/D/peakatail-hub/demo_runs/demo-cohort",
+  "run_id": "demo-cohort-0001",
+  "stratum_to_label": {
+    "dsA": "Tumor_epithelial",
+    "dsB": "Tumor_epithelial"
+  }
+}

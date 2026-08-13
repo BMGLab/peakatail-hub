@@ -63,12 +63,16 @@ export function useGeneviewWindow(gene: GeneSummary | null | undefined): UseGene
     setWindowState(spanOf(gene))
   }, [gene])
 
+  // Gentler per-step factors (0.8 in / 1.25 out, exact reciprocals) so a
+  // scroll notch or button press nudges the view rather than jumping a third
+  // of the span at a time -- the previous 0.7/1.4 felt jerky and made it easy
+  // to overshoot past the feature you were zooming toward.
   const zoomIn = useCallback(
-    (centerBp?: number) => setWindowState((w) => zoomWindow(w, 0.7, centerBp ?? (w.start + w.end) / 2)),
+    (centerBp?: number) => setWindowState((w) => zoomWindow(w, 0.8, centerBp ?? (w.start + w.end) / 2)),
     [],
   )
   const zoomOut = useCallback(
-    (centerBp?: number) => setWindowState((w) => zoomWindow(w, 1.4, centerBp ?? (w.start + w.end) / 2)),
+    (centerBp?: number) => setWindowState((w) => zoomWindow(w, 1.25, centerBp ?? (w.start + w.end) / 2)),
     [],
   )
   const pan = useCallback((deltaBp: number) => setWindowState((w) => panWindow(w, deltaBp)), [])

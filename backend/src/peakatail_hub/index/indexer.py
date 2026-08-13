@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -291,6 +292,42 @@ def _insert_df(con: duckdb.DuckDBPyConnection, table: str, df: pd.DataFrame) -> 
         con.unregister("_tmp_df")
 
 
+def _run_headline_stats(run_dir: Path, run: "Run", n_findings: int, n_length: int) -> dict:
+    """Headline run stats for the dashboard. The engine's entity_counts keys vary
+    by run type (`ema run` writes ip stats only; `ema reannotate` writes
+    final_*_total), so derive n_pas/n_cells/n_genes from the real artifacts and
+    fall back to whatever entity_counts provides. Cheap: pasbed is a line count;
+    clusters.h5ad reads are backed (metadata only)."""
+    ec = run.manifest.entity_counts or {}
+    n_pas = ec.get("n_pas") or ec.get("final_pas_total")
+    for name in ("pasbed.bed", "annotatedpas.bed"):
+        p = run_dir / name
+        if p.exists():
+            try:
+                n_pas = sum(1 for _ in open(p)); break
+            except Exception:
+                pass
+    n_cells = ec.get("n_cells") or ec.get("final_cells_total")
+    n_genes = ec.get("n_genes")
+    if n_cells is None or n_genes is None:
+        try:
+            import anndata as ad
+            tot, nv = 0, 0
+            for h in sorted((run_dir / "07_clustering").glob("*/clusters.h5ad")):
+                try:
+                    a = ad.read_h5ad(h, backed="r"); tot += int(a.n_obs); nv = max(nv, int(a.n_vars))
+                except Exception:
+                    pass
+            if n_cells is None and tot:
+                n_cells = tot
+            if n_genes is None and nv:
+                n_genes = nv
+        except Exception:
+            pass
+    return {"n_pas": n_pas, "n_cells": n_cells, "n_genes": n_genes,
+            "n_datasets": ec.get("n_datasets"), "n_findings": n_findings, "n_length_rows": n_length}
+
+
 def index_run(con: duckdb.DuckDBPyConnection, run_dir: Path, source_id: str | None = None) -> str:
     """(Re)index one run directory. Returns the run_id. Raises on any
     validation or read failure -- callers (index_runs_root) are responsible
@@ -341,14 +378,26 @@ def index_run(con: duckdb.DuckDBPyConnection, run_dir: Path, source_id: str | No
     # enforce that invariant here or every real run would fail indexing.
     # Fixtures/contract-level tests keep enforcing it (default True there);
     # this is the one call site that's deliberately lenient for real runs.
-    validate_run(run, check_ledger_invariant=False)  # raises ContractValidationError on any OTHER violation
-
-    pas_df = _pas_ledger_df(run_id, run)
-    cell_df = _cell_ledger_df(run_id, run)
+    # PERF: the pas/cell provenance ledgers are the ONLY 6M-row artifacts and feed
+    # only the Audit view. Reading them per-row (pydantic) is O(ledger size) and
+    # dominates index time on real cohorts. Skip them by default (lazy-load per-run
+    # on demand); set HUB_INDEX_LEDGERS=1 to index them + run the full validation.
+    if os.environ.get("HUB_INDEX_LEDGERS", "0").lower() in ("1", "true", "yes"):
+        validate_run(run, check_ledger_invariant=False)
+        pas_df = _pas_ledger_df(run_id, run)
+        cell_df = _cell_ledger_df(run_id, run)
+    else:
+        pas_df = pd.DataFrame()
+        cell_df = pd.DataFrame()
     findings_df = _findings_df(run_id, run)
     length_df = _length_df(run_id, run)
-    umap_df = _umap_points_df(run_id, run)
+    try:
+        umap_df = _umap_points_df(run_id, run)
+    except Exception as _umap_e:  # multi-dataset runs: umap indexing is best-effort
+        logger.warning("run_id=%s: umap points skipped (%s)", run_id, _umap_e)
+        umap_df = pd.DataFrame()
 
+    _stats = _run_headline_stats(run_dir, run, len(findings_df), len(length_df))
     con.execute("BEGIN TRANSACTION")
     try:
         _delete_run(con, run_id)
@@ -374,12 +423,12 @@ def index_run(con: duckdb.DuckDBPyConnection, run_dir: Path, source_id: str | No
                 artifacts_fp,
                 json.dumps(run.manifest.resolved_config),
                 json.dumps(run.manifest.stratum_to_label),
-                run.manifest.entity_counts.get("n_pas"),
-                run.manifest.entity_counts.get("n_cells"),
-                run.manifest.entity_counts.get("n_genes"),
-                run.manifest.entity_counts.get("n_datasets"),
-                run.manifest.entity_counts.get("n_findings"),
-                run.manifest.entity_counts.get("n_length_rows"),
+                _stats["n_pas"],
+                _stats["n_cells"],
+                _stats["n_genes"],
+                _stats["n_datasets"],
+                _stats["n_findings"],
+                _stats["n_length_rows"],
                 source_id,
             ],
         )

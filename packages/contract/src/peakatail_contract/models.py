@@ -151,7 +151,7 @@ class Artifact(BaseModel):
         default="0.1.0",
         description="Schema version this artifact was written against (checked by validate()).",
     )
-    entity_counts: dict[str, int] = Field(
+    entity_counts: dict[str, int | float] = Field(
         default_factory=dict,
         description="e.g. {'n_pas': 812, 'n_cells': 4213}. Used for the QC drop-funnel and validate() invariants.",
     )
@@ -199,7 +199,7 @@ class RunManifest(BaseModel):
         ),
     )
     artifacts: list[Artifact] = Field(default_factory=list)
-    entity_counts: dict[str, int] = Field(
+    entity_counts: dict[str, int | float] = Field(
         default_factory=dict,
         description="Run-level totals, e.g. {'n_pas': 812, 'n_cells': 4213, 'n_genes': 1890, 'n_datasets': 2}.",
     )
@@ -226,8 +226,8 @@ class PasLedgerRow(BaseModel):
         description="Pre-unify, run-local PAS key as first minted by peak-calling, e.g. '<dataset_id>:<strand>:<raw_pas_id>'."
     )
     chrom: str
-    start: int
-    end: int
+    start: int | None = None
+    end: int | None = None
     strand: str = Field(description="'+' or '-'.")
     unified_pas_id: str = Field(
         description="Post-unify (atlas-snap or coordinate-merge) run-local id, e.g. the merged BED col4 value."
@@ -291,8 +291,8 @@ class CellLedgerRow(BaseModel):
 
     barcode: str = Field(description="Raw cell barcode as read from the BAM barcode_tag (not yet namespaced).")
     dataset_id: str
-    total_reads: int = Field(description="Total 3'-end reads observed for this barcode before any filtering.")
-    n_pas: int = Field(
+    total_reads: int | None = Field(default=None, description="Total 3'-end reads observed for this barcode before any filtering.")
+    n_pas: int | None = Field(default=None, 
         description=(
             "Number of distinct PAS this cell has >=1 read at. NOTE (spec §7e): "
             "the real pipeline's clusters.h5ad stores this under "

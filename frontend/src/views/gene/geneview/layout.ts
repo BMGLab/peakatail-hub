@@ -15,18 +15,18 @@
 // Layout, left to right:  [ LEFT_MARGIN (row labels, = --track-label-col) | plot area (`plotWidth`, genomic-scaled) | gap | COLORBAR_WIDTH ]
 // Layout, top to bottom:  [ TITLE_HEIGHT | RULER_HEIGHT (= --track-ruler-h) | isoform track | PAS band labels sit just above the isoform track | cluster tracks (= --track-prop-row each)... | optional overlay rows... ]
 
-export const LEFT_MARGIN = 136 // --track-label-col
+export const LEFT_MARGIN = 150 // --track-label-col
 export const COLORBAR_GAP = 18
-export const COLORBAR_WIDTH = 70 // includes --track-colorbar-w (14px bar) + tick/label text
-export const TITLE_HEIGHT = 30
-export const RULER_HEIGHT = 26 // --track-ruler-h
+export const COLORBAR_WIDTH = 74 // includes --track-colorbar-w (14px bar) + tick/label text
+export const TITLE_HEIGHT = 36
+export const RULER_HEIGHT = 32 // --track-ruler-h
 /** Headroom above the isoform track reserved for PAS id labels (the small
  * red text sitting just above the exon boxes in the reference figure). */
-export const PAS_LABEL_HEIGHT = 16
-export const ISOFORM_ROW_HEIGHT = 22 // --track-model-row
-export const MIN_ISOFORM_TRACK_HEIGHT = 40
-export const CLUSTER_ROW_HEIGHT = 52 // --track-prop-row
-export const OVERLAY_ROW_HEIGHT = 24
+export const PAS_LABEL_HEIGHT = 22
+export const ISOFORM_ROW_HEIGHT = 34 // --track-model-row
+export const MIN_ISOFORM_TRACK_HEIGHT = 66
+export const CLUSTER_ROW_HEIGHT = 84 // --track-prop-row
+export const OVERLAY_ROW_HEIGHT = 28
 export const TRACK_GAP = 2 // --track-gap
 /** Minimum visible pixel width for a PAS band/bar, so a narrow (or
  * singleton, ~1bp) PAS doesn't vanish at whole-gene zoom -- mirrors
@@ -35,5 +35,5 @@ export const TRACK_GAP = 2 // --track-gap
 export const MIN_PAS_WIDTH_PX = 8
 
 export function isoformTrackHeight(nIsoforms: number): number {
-  return Math.max(MIN_ISOFORM_TRACK_HEIGHT, nIsoforms * ISOFORM_ROW_HEIGHT + 10)
+  return Math.max(MIN_ISOFORM_TRACK_HEIGHT, nIsoforms * ISOFORM_ROW_HEIGHT + 16)
 }

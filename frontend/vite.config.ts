@@ -35,4 +35,18 @@ export default defineConfig({
       },
     },
   },
+  // `vite preview` (serving the production build locally) needs the same /api
+  // proxy as the dev server -- otherwise the hashed prod bundle's default
+  // VITE_API_BASE='/api' 404s. Mirrors `server.proxy` above. (Real deploys
+  // use nginx per frontend/Dockerfile; this is just for a local cache-proof
+  // production preview.)
+  preview: {
+    proxy: {
+      '/api': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api/, ''),
+      },
+    },
+  },
 })
