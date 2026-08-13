@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router-dom'
 import { useRunSwitch } from '@lib/api/hooks'
 import { useScopeStore } from '@state/useScopeStore'
 import { celltypeLabel } from '@lib/celltypeLabel'
+import { trendDirectionLabel } from '@lib/trendDirectionLabel'
 import { EmptyState, ErrorState, LoadingState } from '@views/shared/ViewStates'
 import type { SwitchCelltypeResult } from '@lib/contract/types'
 import './ResultsView.css'
@@ -28,7 +29,7 @@ function CelltypeCard({ celltype }: { celltype: SwitchCelltypeResult }) {
         </span>
         {trend && (
           <span className={`badge ${trend.direction === 'decreasing' ? 'badge--warn' : 'badge--neutral'}`}>
-            3'UTR {trend.direction ?? 'trend unavailable'}
+            {trend.direction ? trendDirectionLabel(trend.direction) : 'trend unavailable'}
           </span>
         )}
       </div>

@@ -47,6 +47,11 @@ describe('GeneView', () => {
     expect(screen.getByRole('combobox', { name: /cluster key/i })).toHaveValue('stage')
     expect(screen.getByRole('checkbox', { name: /pas-distance table overlay/i })).toBeChecked()
 
+    // Per-gene shorten/lengthen headline (2026-08-14): derived from
+    // /switch/{celltype}/trend-genes, matched by gene_id, shown right on
+    // the gene page -- biological wording, not raw "decreasing".
+    await waitFor(() => expect(screen.getByText(/3′UTR shortening in Tumor Epithelial/i)).toBeInTheDocument())
+
     await waitFor(() => expect(screen.getByTitle(/TP53 geneview \(plotly, Tumor epithelial\)/i)).toBeInTheDocument())
 
     const user = userEvent.setup()

@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useFindings, useRunSwitch, useRunSwitchNbMulti, useRunSwitchTrendGenes } from '@lib/api/hooks'
 import { useScopeStore } from '@state/useScopeStore'
 import { celltypeLabel } from '@lib/celltypeLabel'
+import { trendDirectionLabel } from '@lib/trendDirectionLabel'
 import { EmptyState, ErrorState, LoadingState } from '@views/shared/ViewStates'
 import { formatBytes } from './ResultsView'
 import './ResultsView.css'
@@ -70,7 +71,7 @@ export function ResultsCelltypeView() {
           <>
             <div className="results-view__trend">
               <span>
-                direction <strong>{entry.trend.direction ?? '—'}</strong>
+                <strong>{trendDirectionLabel(entry.trend.direction)}</strong>
               </span>
               <span>
                 slope <strong>{entry.trend.slope?.toFixed(4) ?? '—'}</strong>
@@ -124,7 +125,7 @@ export function ResultsCelltypeView() {
                   <td className="mono">{g.gene_id}</td>
                   <td>{g.slope?.toFixed(4) ?? '—'}</td>
                   <td>{g.spearman?.toFixed(2) ?? '—'}</td>
-                  <td>{g.direction ?? '—'}</td>
+                  <td>{trendDirectionLabel(g.direction)}</td>
                 </tr>
               ))}
             </tbody>

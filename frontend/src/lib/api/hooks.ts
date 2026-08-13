@@ -3,7 +3,7 @@
 // place. Swapping mocks -> real backend happens inside client.ts; these hooks
 // don't change.
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, type BrowseParams, type FindingsParams, type GenesBrowseParams } from './client'
+import { api, checkGeneviewRender, type BrowseParams, type FindingsParams, type GenesBrowseParams } from './client'
 
 export function useRuns() {
   return useQuery({ queryKey: ['runs'], queryFn: api.getRuns })
@@ -39,6 +39,20 @@ export function useRunSwitchNbMulti(runId: string | null, celltype: string | nul
     queryKey: ['runSwitchNbMulti', runId, celltype, limit],
     queryFn: () => api.getRunSwitchNbMulti(runId!, celltype!, limit),
     enabled: runId !== null && celltype !== null,
+  })
+}
+
+// Real ema geneview pre-flight check (2026-08-14) -- see
+// client.ts::checkGeneviewRender's doc comment. `retry: false` for the same
+// reason useGeneviewMeta has it: a cache-miss request already blocks up to
+// ~15s server-side generating the figure; TanStack Query's default retry
+// would multiply that wait on a genuine failure instead of surfacing it.
+export function useGeneviewCheck(renderUrl: string | null) {
+  return useQuery({
+    queryKey: ['geneviewCheck', renderUrl],
+    queryFn: () => checkGeneviewRender(renderUrl!),
+    enabled: renderUrl !== null,
+    retry: false,
   })
 }
 

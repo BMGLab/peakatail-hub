@@ -726,3 +726,40 @@ export function geneviewRenderUrl(params: GeneviewRenderParams): string {
   if (params.pas_distance_table !== undefined) qs.set('pas_distance_table', String(params.pas_distance_table))
   return `/geneview/render?${qs.toString()}`
 }
+
+export type GeneviewCheckResult =
+  | { ok: true }
+  | { ok: false; status: number; message: string }
+
+/**
+ * Pre-flight check for `geneviewRenderUrl` (2026-08-14) -- GeneView calls
+ * this BEFORE pointing the <iframe>/<img> `src` at the render URL, so it
+ * can tell a genuine "no PAS for this gene in this cell type" (a common,
+ * legitimate case -- the renderer returns a clean 404 with a plain-text
+ * body like "gene <id> has no PAS expressed in cell type <ct> — no APA
+ * data to plot here.") apart from a real failure, and render a friendly
+ * empty state instead of a broken/blank iframe or a scary error banner.
+ * This request is what actually triggers on-demand generation on a
+ * cache-miss (~15s) -- the iframe/img src that follows on success always
+ * hits an already-warm cache.
+ */
+/** Pure `Response -> GeneviewCheckResult` mapping, split out from
+ * `checkGeneviewRender` so it's unit-testable against a constructed
+ * `Response` directly -- `checkGeneviewRender` itself short-circuits to
+ * `{ok: true}` under USE_MOCKS (no real service to hit in mock mode), which
+ * would otherwise make the parsing logic here untestable in this repo's
+ * mocks-on-by-default test setup. */
+export async function parseGeneviewCheckResponse(res: Response): Promise<GeneviewCheckResult> {
+  if (res.ok) return { ok: true }
+  const text = await res.text().catch(() => '')
+  return { ok: false, status: res.status, message: text.trim() || `Failed to generate geneview (HTTP ${res.status}).` }
+}
+
+export async function checkGeneviewRender(url: string): Promise<GeneviewCheckResult> {
+  if (USE_MOCKS) return { ok: true } // nothing real to check under mocks -- see geneviewRenderUrl's doc comment
+  try {
+    return await parseGeneviewCheckResponse(await fetch(url))
+  } catch (err) {
+    return { ok: false, status: 0, message: err instanceof Error ? err.message : String(err) }
+  }
+}
