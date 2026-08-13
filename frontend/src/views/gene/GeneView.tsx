@@ -9,12 +9,15 @@ import { EmptyState, ErrorState, LoadingState } from '@views/shared/ViewStates'
 import './GeneView.css'
 
 // Every gene this run's switch analysis has a length-trend row for, per
-// celltype (a few thousand -- see length_trend_by_gene.tsv), not just the
-// "top N by |slope|" ResultsCelltypeView shows -- the backend endpoint caps
-// at 500 (api/runs.py Query(..., le=500)), the max this headline can ask
-// for. A gene outside that cap simply has no headline shown (team-lead's
+// celltype (a few thousand -- see length_trend_by_gene.tsv). The backend
+// endpoint caps at 20000 (api/runs.py Query(..., le=20000), raised
+// 2026-08-14 alongside making the length results browsable -- see
+// ResultsCelltypeView's LengthTrendTable), well above any real celltype's
+// gene count, so this headline lookup now effectively covers every gene
+// with a trend row, not just a "top 500 by |slope|" subset. A gene still
+// outside that (implausible) cap simply has no headline shown (team-lead's
 // own call: "if the gene isn't in the trend list, just omit it").
-const TREND_LOOKUP_LIMIT = 500
+const TREND_LOOKUP_LIMIT = 20000
 
 type Engine = 'plotly' | 'matplotlib'
 type ClusterKey = 'stage' | 'leiden'

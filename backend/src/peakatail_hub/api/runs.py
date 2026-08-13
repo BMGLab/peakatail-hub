@@ -76,17 +76,31 @@ def run_switch_results(run_id: str, con: duckdb.DuckDBPyConnection = Depends(get
 def run_switch_trend_genes(
     run_id: str,
     celltype: str,
-    limit: int = Query(default=50, ge=1, le=500),
+    # 2026-08-14: raised from le=500 -- this is what makes the length
+    # results actually BROWSABLE. switch_trend_gene is fully ingested at
+    # index time from the small length_trend_by_gene.tsv (a few thousand
+    # rows/celltype, ~300KB -- NOT the 100GB+ per-cell classic/proportion/
+    # shannon files, which stay stat-only/unbrowsable, see
+    # switch_availability), so a high limit here is still a cheap single
+    # query -- the frontend's LengthTrendTable fetches the whole celltype
+    # set in one call and does search/sort/pagination client-side.
+    limit: int = Query(default=500, ge=1, le=20000),
     con: duckdb.DuckDBPyConnection = Depends(get_db),
 ) -> list[SwitchTrendGene]:
     """Per-gene drill-down behind one celltype's length-trend-across-stages
     headline (`SwitchResults.celltypes[].trend`) -- top genes by |slope|,
     the professor headline finding (3'UTR shortening/lengthening across
-    disease stages) at gene resolution.
+    disease stages) at gene resolution. Backs both GeneView's per-gene
+    headline (a small `limit`) and ResultsCelltypeView's full browsable
+    length-results table (a large `limit`, effectively "all genes").
     """
     if queries.get_run(con, run_id) is None:
         raise HTTPException(status_code=404, detail=f"run_id={run_id!r} not indexed")
-    return [SwitchTrendGene(**r) for r in queries.switch_trend_top_genes(con, run_id, celltype, limit)]
+    rows = queries.switch_trend_top_genes(con, run_id, celltype, limit)
+    # gene_symbol (2026-08-14): one batch query scoped to just this page's
+    # gene_ids, same pattern as list_genes/list_findings' page-scoped joins.
+    symbols = queries.gene_symbol_map(con, run_id, [r["gene_id"] for r in rows])
+    return [SwitchTrendGene(**r, gene_symbol=symbols.get(r["gene_id"])) for r in rows]
 
 
 @router.get("/runs/{run_id}/switch/{celltype}/nb-multi", response_model=list[SwitchNbMultiRow])

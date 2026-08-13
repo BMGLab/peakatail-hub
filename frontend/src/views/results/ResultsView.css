@@ -130,3 +130,76 @@
   flex-wrap: wrap;
   gap: 6px;
 }
+
+/* Secondary/de-emphasized note (2026-08-14) -- the raw per-cell length
+   files are 100GB+/run and deliberately never loaded; this used to be its
+   own panel with a heading, now it's a small trailing note below the
+   browsable per-gene length table so it doesn't compete for attention. */
+.results-view__length-avail-note {
+  font-size: 11px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  opacity: 0.75;
+}
+
+/* LengthTrendTable search/sort/pagination controls. */
+.results-view__table-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.results-view__table-toolbar input[type='search'] {
+  flex: 1 1 240px;
+  min-width: 160px;
+  padding: 6px 10px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-surface);
+  color: var(--text-h);
+}
+
+.results-view__sortable {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.results-view__sortable:hover {
+  color: var(--accent);
+}
+
+.results-view__pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.results-view__pagination button {
+  padding: 4px 10px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-surface);
+  color: var(--text-h);
+  cursor: pointer;
+}
+
+.results-view__pagination button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.results-view__pagination button:not(:disabled):hover {
+  background: var(--bg-hover);
+}

@@ -15,6 +15,7 @@ import type {
   LengthRow,
   SwitchNbMultiRow,
   SwitchResults,
+  SwitchTrendGeneRow,
   PasDetail,
   PasLedgerRow,
   RunQc,
@@ -323,16 +324,30 @@ const _mockSwitchResults: SwitchResults = {
   })),
 }
 
-export function mockSwitchTrendGenes(celltype: string): { gene_id: string; n_stages: number; slope: number; spearman: number; direction: string }[] {
+export function mockSwitchTrendGenes(celltype: string): SwitchTrendGeneRow[] {
   const entry = _mockSwitchResults.celltypes.find((c) => c.celltype === celltype)
   if (!entry) return []
-  return genes.map((g, i) => ({
+  const real = genes.map((g, i) => ({
     gene_id: g.gene_id,
+    gene_symbol: g.gene_name,
     n_stages: 2,
     slope: (entry.trend?.slope ?? 0) * (1 - i * 0.1),
     spearman: entry.trend?.spearman ?? 0,
     direction: entry.trend?.direction ?? 'decreasing',
   }))
+  // Plus a batch of synthetic rows (2026-08-14) -- the real backend's
+  // trend-genes list is a few thousand rows/celltype (length_trend_by_gene.tsv);
+  // the 4 fixture genes alone can't exercise LengthTrendTable's search/
+  // sort/pagination in mock mode the way a realistically-sized list can.
+  const synthetic = Array.from({ length: 120 }, (_, i) => ({
+    gene_id: `ENSG9${(100000 + i).toString().padStart(8, '0')}`,
+    gene_symbol: `SYNGENE${i + 1}`,
+    n_stages: 2,
+    slope: (seeded(i, 30) - 0.5) * 0.5,
+    spearman: seeded(i, 31) > 0.5 ? 1 : -1,
+    direction: seeded(i, 31) > 0.5 ? 'increasing' : 'decreasing',
+  }))
+  return [...real, ...synthetic]
 }
 
 export function mockSwitchNbMulti(celltype: string): SwitchNbMultiRow[] {

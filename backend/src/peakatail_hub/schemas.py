@@ -414,6 +414,9 @@ class SwitchResults(BaseModel):
 
 class SwitchTrendGene(BaseModel):
     gene_id: str
+    # Human-readable symbol (2026-08-14), joined from pas_ledger -- see
+    # api/runs.py::run_switch_trend_genes. None when unavailable.
+    gene_symbol: str | None = None
     n_stages: int | None = None
     slope: float | None = None
     spearman: float | None = None

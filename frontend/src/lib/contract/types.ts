@@ -217,6 +217,8 @@ export interface SwitchResults {
 
 export interface SwitchTrendGeneRow {
   gene_id: string
+  /** Human-readable symbol (2026-08-14), joined from pas_ledger. */
+  gene_symbol: string | null
   n_stages: number | null
   slope: number | null
   spearman: number | null

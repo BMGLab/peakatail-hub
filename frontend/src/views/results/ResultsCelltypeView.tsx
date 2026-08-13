@@ -1,26 +1,28 @@
 import { useMemo } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { useFindings, useRunSwitch, useRunSwitchNbMulti, useRunSwitchTrendGenes } from '@lib/api/hooks'
+import { useFindings, useRunSwitch, useRunSwitchNbMulti } from '@lib/api/hooks'
 import { useScopeStore } from '@state/useScopeStore'
 import { celltypeLabel } from '@lib/celltypeLabel'
 import { trendDirectionLabel } from '@lib/trendDirectionLabel'
 import { EmptyState, ErrorState, LoadingState } from '@views/shared/ViewStates'
 import { formatBytes } from './ResultsView'
+import { LengthTrendTable } from './LengthTrendTable'
 import './ResultsView.css'
 
 /**
  * One cell type's B3_switch results, ALL of them combined in one view
  * (2026-08-14 fix -- this used to only show fisher; nb_multi, a genuinely
  * different switch-diff strategy/result grain, was invisible): the
- * length-trend-across-stages headline (run-level AND top genes by |slope|),
- * fisher's switching genes (findings_long filtered to this celltype --
- * sorted client-side by qvalue ascending since the backend's /findings
- * endpoint orders by finding_uid, not significance), nb_multi's omnibus
- * hits (a separate table/endpoint -- nb_multi_omnibus.tsv has no
- * canonical_cluster/direction, so it can't live in findings_long, see
- * backend schema.py's switch_nb_multi table docstring), and length-result
- * availability. Each gene row opens a real ema geneview scoped to this
- * celltype.
+ * length-trend-across-stages headline (run-level), fisher's switching genes
+ * (findings_long filtered to this celltype -- sorted client-side by qvalue
+ * ascending since the backend's /findings endpoint orders by finding_uid,
+ * not significance), nb_multi's omnibus hits (a separate table/endpoint --
+ * nb_multi_omnibus.tsv has no canonical_cluster/direction, so it can't live
+ * in findings_long, see backend schema.py's switch_nb_multi table
+ * docstring), and the full browsable per-gene LENGTH results (see
+ * LengthTrendTable -- 2026-08-14, supersedes the old capped "top 25 by
+ * |slope|" preview panel, which is now this same table's default sort).
+ * Each gene row opens a real ema geneview scoped to this celltype.
  */
 export function ResultsCelltypeView() {
   const { celltype } = useParams<{ celltype: string }>()
@@ -28,7 +30,6 @@ export function ResultsCelltypeView() {
   const navigate = useNavigate()
 
   const switchQuery = useRunSwitch(runId)
-  const trendGenesQuery = useRunSwitchTrendGenes(runId, celltype ?? null, 25)
   const findingsQuery = useFindings({ run_id: runId ?? undefined, celltype: celltype ?? undefined, limit: 500 })
   const nbMultiQuery = useRunSwitchNbMulti(runId, celltype ?? null, 25)
 
@@ -104,33 +105,8 @@ export function ResultsCelltypeView() {
       </div>
 
       <div className="panel results-view__trend-panel">
-        <h4>Top genes by |trend slope|</h4>
-        {trendGenesQuery.isLoading ? (
-          <LoadingState label="Loading top genes…" />
-        ) : (trendGenesQuery.data ?? []).length === 0 ? (
-          <p className="state-message">No per-gene trend rows for this celltype.</p>
-        ) : (
-          <table className="gene-view__table">
-            <thead>
-              <tr>
-                <th>gene_id</th>
-                <th>slope</th>
-                <th>spearman</th>
-                <th>direction</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(trendGenesQuery.data ?? []).map((g) => (
-                <tr key={g.gene_id} onClick={() => navigate(`/genes/${g.gene_id}?celltype=${encodeURIComponent(celltype)}`)} style={{ cursor: 'pointer' }}>
-                  <td className="mono">{g.gene_id}</td>
-                  <td>{g.slope?.toFixed(4) ?? '—'}</td>
-                  <td>{g.spearman?.toFixed(2) ?? '—'}</td>
-                  <td>{trendDirectionLabel(g.direction)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
+        <h4>Length results by gene</h4>
+        <LengthTrendTable runId={runId} celltype={celltype} />
       </div>
 
       <div className="panel results-view__trend-panel">
@@ -217,16 +193,17 @@ export function ResultsCelltypeView() {
         )}
       </div>
 
-      <div className="panel results-view__trend-panel">
-        <h4>Length-result availability (not browsable -- per-cell files, up to 100GB+/run)</h4>
-        <div className="results-view__length-avail">
+      <p className="results-view__length-avail-note state-message">
+        Raw per-cell length files (classic/proportion/shannon) are not loaded into the hub -- up to 100GB+/run.
+        {' '}
+        <span className="results-view__length-avail">
           {Object.entries(entry.length).map(([strategy, avail]) => (
             <span key={strategy} className="badge badge--neutral">
               {strategy}: {formatBytes(avail.file_size_bytes)}
             </span>
           ))}
-        </div>
-      </div>
+        </span>
+      </p>
     </div>
   )
 }
