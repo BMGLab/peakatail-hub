@@ -21,9 +21,27 @@ type DiffStrategy = 'fisher' | 'nb_multi'
 // proportion/shannon -- classic's trend was always computed by the pipeline
 // itself. A strategy tab is disabled, not hidden, when its trend is absent:
 // truthful ("not computed"), not silently missing.
-const LENGTH_STRATEGIES: { key: LengthStrategy; label: string }[] = [
+//
+// `proportion` (2026-08-14, science-reports finding): its trend is
+// UNCONDITIONALLY disabled, never just "not yet computed" -- the engine
+// pads every uncovered (gene,cell) pair with 1/n_PAS, so ~98% of
+// proportion.tsv is synthetic and the per-celltype mean comes out constant
+// across every stage (only ~3 distinct values across all 24 celltypes,
+// = 1/mean_PAS). The computed proportion trend/per-gene table DOES exist
+// on disk and IS indexed (same pipeline as shannon -- see
+// index/indexer.py's per-strategy subdir layout), so this is deliberately
+// a presentation-layer block, not a data gap: showing it as flat "no
+// shortening" would be read as a real biological null result when it's
+// actually an engine defect. classic and shannon are unaffected -- both
+// vary for real. Never remove this without re-verifying the padding bug
+// is actually fixed upstream in ema.
+const LENGTH_STRATEGIES: { key: LengthStrategy; label: string; invalidReason?: string }[] = [
   { key: 'classic', label: 'Classic (PDUI)' },
-  { key: 'proportion', label: 'Proportion' },
+  {
+    key: 'proportion',
+    label: 'Proportion',
+    invalidReason: 'Invalid — uniform-padded output (engine defect): uncovered cells are synthetically filled with 1/n_PAS, so the trend is a constant, not real biology.',
+  },
   { key: 'shannon', label: 'Shannon entropy' },
 ]
 
@@ -80,20 +98,24 @@ export function ResultsCelltypeView() {
         <h4>3'UTR length trend across stages</h4>
         <div className="results-view__strategy-tabs" role="tablist" aria-label="Length strategy">
           {LENGTH_STRATEGIES.map((s) => {
-            const available = entry.trend[s.key] !== undefined
+            const invalid = s.invalidReason !== undefined
+            const available = !invalid && entry.trend[s.key] !== undefined
             return (
               <button
                 key={s.key}
                 type="button"
                 role="tab"
                 aria-selected={lengthStrategy === s.key}
-                disabled={!available}
-                title={available ? undefined : 'Not computed for this run/celltype'}
-                className={`results-view__strategy-tab${lengthStrategy === s.key ? ' is-active' : ''}${!available ? ' is-unavailable' : ''}`}
+                disabled={invalid || !available}
+                title={invalid ? s.invalidReason : available ? undefined : 'Not computed for this run/celltype'}
+                className={`results-view__strategy-tab${lengthStrategy === s.key ? ' is-active' : ''}${
+                  invalid ? ' is-invalid' : !available ? ' is-unavailable' : ''
+                }`}
                 onClick={() => setLengthStrategy(s.key)}
               >
                 {s.label}
-                {!available && <span className="results-view__strategy-tab-note">not computed</span>}
+                {invalid && <span className="results-view__strategy-tab-note results-view__strategy-tab-note--invalid">invalid</span>}
+                {!invalid && !available && <span className="results-view__strategy-tab-note">not computed</span>}
               </button>
             )
           })}
@@ -283,11 +305,15 @@ export function ResultsCelltypeView() {
       <p className="results-view__length-avail-note state-message">
         Raw per-cell length files (classic/proportion/shannon) are not loaded into the hub -- up to 100GB+/run.{' '}
         <span className="results-view__length-avail">
-          {Object.entries(entry.length).map(([strategy, avail]) => (
-            <span key={strategy} className="badge badge--neutral">
-              {strategy}: {formatBytes(avail.file_size_bytes)}
-            </span>
-          ))}
+          {Object.entries(entry.length).map(([strategy, avail]) => {
+            const invalidReason = LENGTH_STRATEGIES.find((s) => s.key === strategy)?.invalidReason
+            return (
+              <span key={strategy} className="badge badge--neutral" title={invalidReason}>
+                {strategy}: {formatBytes(avail.file_size_bytes)}
+                {invalidReason && ' ⚠'}
+              </span>
+            )
+          })}
         </span>
       </p>
     </div>

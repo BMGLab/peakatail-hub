@@ -186,11 +186,30 @@
   cursor: not-allowed;
 }
 
+/* `invalid` (2026-08-14) is a DIFFERENT state than plain "not computed yet"
+   -- proportion's trend exists but is scientifically meaningless (engine
+   defect: uniform-padded, constant across stages, see LENGTH_STRATEGIES'
+   docstring). Kept at full opacity (unlike the greyed-out .is-unavailable)
+   with a warning-toned border so it reads as "don't trust this", not
+   "nothing here yet". */
+.results-view__strategy-tab.is-invalid {
+  cursor: not-allowed;
+  color: var(--warn);
+  border-color: var(--warn);
+  background: var(--bg-surface);
+}
+
 .results-view__strategy-tab-note {
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.03em;
   opacity: 0.8;
+}
+
+.results-view__strategy-tab-note--invalid {
+  color: var(--warn);
+  opacity: 1;
+  font-weight: 700;
 }
 
 /* LengthTrendTable search/sort/pagination controls. */
