@@ -1,48 +1,207 @@
+/* Shared loading / empty / error / stale / notice states (design doc §5,
+   "great empty/loading/error states" — every view hits these, so they carry
+   most of the app's "does this feel intentional" weight). All panel-framed,
+   all on the current semantic tokens (no legacy --text-dim/--border aliases
+   so these stay correct if the aliases are ever retired). */
+
 .view-state {
-  padding: 24px;
-  border-radius: var(--radius);
-  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  padding: var(--space-9) var(--space-7);
+  border-radius: var(--radius-lg);
+  text-align: center;
+  min-height: 160px;
 }
+
+.view-state__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-pill);
+  font-size: 18px;
+  line-height: 1;
+}
+
+.view-state__title {
+  margin: 0;
+  font-size: var(--fs-title);
+  font-weight: var(--fw-semibold);
+  color: var(--ink);
+}
+
+.view-state__body {
+  margin: 0;
+  max-width: 46ch;
+  font-size: var(--fs-base);
+  line-height: var(--lh-body);
+  color: var(--ink-muted);
+}
+
+.view-state__actions {
+  display: flex;
+  gap: var(--space-4);
+  margin-top: var(--space-1);
+}
+
+.view-state__actions button {
+  padding: var(--space-3) var(--space-6);
+  border-radius: var(--radius-md);
+  font-size: var(--fs-small);
+  font-weight: var(--fw-medium);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+
+/* --- loading ---------------------------------------------------------- */
 
 .view-state--loading {
-  color: var(--text-dim);
+  color: var(--ink-muted);
 }
+
+.view-state--loading .view-state__icon {
+  background: var(--bg-sunken);
+  animation: view-state-pulse 1.4s var(--ease) infinite;
+}
+
+.view-state--loading .view-state__body {
+  font-size: var(--fs-small);
+  color: var(--ink-muted);
+}
+
+@keyframes view-state-pulse {
+  0%, 100% { opacity: 0.45; transform: scale(0.94); }
+  50% { opacity: 1; transform: scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .view-state--loading .view-state__icon {
+    animation: none;
+  }
+}
+
+/* --- error -------------------------------------------------------------- */
 
 .view-state--error {
-  color: var(--danger);
-  background: var(--danger-bg);
+  background: var(--danger-tint);
+  border: 1px solid var(--danger-line);
 }
 
-.view-state--error button {
-  margin-top: 8px;
-  padding: 4px 10px;
-  border-radius: var(--radius);
-  border: 1px solid var(--danger);
-  background: transparent;
+.view-state--error .view-state__icon {
+  background: var(--bg-surface);
+  color: var(--danger);
+  border: 1px solid var(--danger-line);
+}
+
+.view-state--error .view-state__title {
   color: var(--danger);
 }
+
+.view-state--error .view-state__body code {
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  background: var(--bg-surface);
+  border: 1px solid var(--danger-line);
+  border-radius: var(--radius-sm);
+  padding: 0 var(--space-2);
+}
+
+.view-state--error .view-state__actions button {
+  border: 1px solid var(--danger);
+  background: var(--bg-surface);
+  color: var(--danger);
+}
+
+.view-state--error .view-state__actions button:hover {
+  background: var(--danger-tint);
+}
+
+/* --- empty ---------------------------------------------------------------
+   `no-match` = the query ran fine but nothing matched (loosen filters).
+   `not-indexed` = the underlying data doesn't exist yet (go index it).
+   These MUST look distinct -- one is "you filtered too hard", the other is
+   "there's nothing here to filter yet". */
 
 .view-state--empty {
-  color: var(--text-dim);
+  background: var(--bg-sunken);
+  border: 1px dashed var(--line-strong);
 }
 
+.view-state--empty .view-state__icon {
+  background: var(--bg-surface);
+  color: var(--ink-muted);
+  border: 1px solid var(--line);
+}
+
+.view-state--empty[data-reason='not-indexed'] .view-state__icon {
+  color: var(--accent-strong);
+  border-color: var(--accent-line);
+  background: var(--accent-tint);
+}
+
+.view-state--empty .view-state__actions button {
+  border: 1px solid var(--line-strong);
+  background: var(--bg-surface);
+  color: var(--ink);
+}
+
+.view-state--empty .view-state__actions button:hover {
+  background: var(--bg-hover);
+}
+
+/* --- stale / contract-mismatch banners (inline, not full-panel) -------- */
+
 .view-state--stale {
+  flex-direction: row;
+  justify-content: flex-start;
+  gap: var(--space-3);
+  min-height: 0;
+  padding: var(--space-3) var(--space-5);
+  border-radius: var(--radius-md);
   color: var(--warn);
-  background: var(--warn-bg);
-  padding: 6px 12px;
-  font-size: 12px;
+  background: var(--warn-tint);
+  border: 1px solid var(--warn-line);
+  font-size: var(--fs-small);
+  text-align: left;
 }
 
 .view-state--contract-mismatch {
+  flex-direction: row;
+  justify-content: flex-start;
+  gap: var(--space-3);
+  min-height: 0;
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--radius-md);
   color: var(--danger);
-  background: var(--danger-bg);
-  padding: 10px 14px;
-  font-weight: 600;
+  background: var(--danger-tint);
+  border: 1px solid var(--danger-line);
+  font-weight: var(--fw-semibold);
+  font-size: var(--fs-small);
+  text-align: left;
 }
 
+.view-state--contract-mismatch code {
+  font-family: var(--font-mono);
+  background: var(--bg-surface);
+  border-radius: var(--radius-sm);
+  padding: 0 var(--space-2);
+}
+
+/* --- missing artifact (inline, small — e.g. inside a track canvas slot) - */
+
 .view-state--missing-artifact {
-  color: var(--text-dim);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--ink-muted);
+  font-size: var(--fs-small);
   font-style: italic;
-  padding: 12px;
-  border: 1px dashed var(--border);
+  padding: var(--space-6);
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius-md);
+  background: var(--bg-sunken);
 }

@@ -8,6 +8,7 @@ import { GeneviewCanvas } from './geneview/GeneviewCanvas'
 import { LayerPanel, DEFAULT_LAYER_STATE, type GeneviewLayerState } from './geneview/LayerPanel'
 import { PlotlyChart } from '@charts/PlotlyChart'
 import { EmptyState, ErrorState, LoadingState, MissingArtifactNotice } from '@views/shared/ViewStates'
+import { PageHeader } from '@views/shared/PageHeader'
 import './GeneView.css'
 
 export function GeneView() {
@@ -26,8 +27,20 @@ export function GeneView() {
 
   const geneviewWindow = useGeneviewWindow(geneQuery.data)
 
+  const browserHeader = (
+    <PageHeader
+      title="Browser"
+      description="An IGV-style track view for one gene: its annotated isoforms, the poly(A) sites (PAS) called on it, and each cluster's within-gene usage proportion at every PAS. Search a gene, ENSG id, pas_uid, or locus in the top bar, or click a gene anywhere else in the app, to open it here."
+    />
+  )
+
   if (!geneId) {
-    return <EmptyState reason="no-match" detail="No gene selected." />
+    return (
+      <div className="gene-view">
+        {browserHeader}
+        <EmptyState reason="no-match" detail="No gene selected." />
+      </div>
+    )
   }
 
   // Mirrors QcView's own guard: the backend refuses to guess `run_id` once
@@ -35,7 +48,12 @@ export function GeneView() {
   // reached before any Scope is picked would otherwise surface as a raw
   // "run_id query param is required" 400 rather than a normal empty state.
   if (!runId) {
-    return <EmptyState reason="no-match" detail="Select a run from the top bar scope selector first." />
+    return (
+      <div className="gene-view">
+        {browserHeader}
+        <EmptyState reason="no-match" detail="Select a run from the top bar scope selector first." />
+      </div>
+    )
   }
 
   if (geneQuery.isLoading || dataQuery.isLoading) {

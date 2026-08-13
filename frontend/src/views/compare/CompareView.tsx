@@ -1,6 +1,7 @@
 import { usePinStore } from '@state/usePinStore'
 import { useGene } from '@lib/api/hooks'
 import { EmptyState, LoadingState } from '@views/shared/ViewStates'
+import { PageHeader } from '@views/shared/PageHeader'
 import type { PinnedEntity } from '@lib/contract/types'
 import './CompareView.css'
 
@@ -45,12 +46,25 @@ function ComparePanel({ entity }: { entity: PinnedEntity }) {
 export function CompareView() {
   const pinned = usePinStore((s) => s.pinned)
 
+  const header = (
+    <PageHeader
+      title="Compare"
+      description="A side-by-side grid of the genes, PAS, and cells you've pinned from elsewhere in the app (the pin action in the detail panel or a Findings row). Use it to check a call's supporting data across several entities at once without losing your place."
+    />
+  )
+
   if (pinned.length === 0) {
-    return <EmptyState reason="no-match" detail="Pin genes/PAS/cells from the detail panel to compare them here." />
+    return (
+      <div className="compare-view">
+        {header}
+        <EmptyState reason="no-match" detail="Pin genes/PAS/cells from the detail panel to compare them here." />
+      </div>
+    )
   }
 
   return (
     <div className="compare-view">
+      {header}
       <div className="compare-view__grid">
         {pinned.map((entity) => (
           <ComparePanel key={`${entity.kind}-${entity.id}`} entity={entity} />

@@ -1,5 +1,6 @@
 import { useRuns } from '@lib/api/hooks'
 import { EmptyState, ErrorState, LoadingState } from '@views/shared/ViewStates'
+import { PageHeader } from '@views/shared/PageHeader'
 import { RunCard } from './RunCard'
 import { SourcesPanel } from './SourcesPanel'
 import './DashboardView.css'
@@ -27,10 +28,10 @@ export function DashboardView() {
 
   return (
     <div className="dashboard-view">
-      <header className="dashboard-view__header">
-        <h2>Dashboard</h2>
-        <p className="dashboard-view__subtitle">Overview across every indexed PeakATail run, and where they live.</p>
-      </header>
+      <PageHeader
+        title="Dashboard"
+        description="Every PeakATail run this hub has indexed, and the source directories they were collected from. Pick a run here (or from the Scope selector in the top bar) to open it in the browser, or add a new source directory to index more runs."
+      />
 
       <section className="dashboard-view__overview" aria-label="Overview totals across all sources">
         <div className="dashboard-stat panel">

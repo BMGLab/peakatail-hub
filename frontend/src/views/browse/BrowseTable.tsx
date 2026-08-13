@@ -2,11 +2,14 @@ import { useEffect, useRef, useState } from 'react'
 import { type ColumnDef, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { EmptyState, ErrorState, LoadingState } from '@views/shared/ViewStates'
+import { PageHeader } from '@views/shared/PageHeader'
 import './BrowseTable.css'
 
 export interface BrowseTableProps<T> {
   /** Shown as the panel heading, e.g. "Genes". */
   title: string
+  /** 1-3 sentence explanation of what this browser lists and how to read it. */
+  description: string
   placeholder: string
   columns: ColumnDef<T, any>[] // eslint-disable-line @typescript-eslint/no-explicit-any
   rows: T[]
@@ -31,6 +34,7 @@ export interface BrowseTableProps<T> {
  */
 export function BrowseTable<T>({
   title,
+  description,
   placeholder,
   columns,
   rows,
@@ -73,8 +77,8 @@ export function BrowseTable<T>({
 
   return (
     <div className="browse-table">
+      <PageHeader title={title} description={description} />
       <div className="browse-table__toolbar">
-        <h3 className="browse-table__title">{title}</h3>
         <input
           type="search"
           className="browse-table__search"

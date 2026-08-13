@@ -3,6 +3,7 @@ import { useUmap } from '@lib/api/hooks'
 import { useScopeStore } from '@state/useScopeStore'
 import { PlotlyChart } from '@charts/PlotlyChart'
 import { EmptyState, ErrorState, LoadingState } from '@views/shared/ViewStates'
+import { PageHeader } from '@views/shared/PageHeader'
 import type { UmapPoint } from '@lib/contract/types'
 import './UmapView.css'
 
@@ -34,13 +35,46 @@ export function UmapView() {
   const points = useMemo(() => umapQuery.data ?? [], [umapQuery.data])
   const colors = useMemo(() => colorMap(points, colorField), [points, colorField])
 
+  const header = (
+    <PageHeader
+      title="UMAP"
+      description="A 2D embedding of every cell in the selected run, one point per cell. Proximity approximates similarity in PAS-usage space -- clustered points were grouped together by the pipeline's clustering stage, not necessarily by gene expression. Recolor by cluster (celltype/stage/sample land once cross-run label resolution ships)."
+    />
+  )
+
   if (!datasetId) {
-    return <EmptyState reason="no-match" detail="Select a run/dataset scope from the top bar first." />
+    return (
+      <div className="umap-view">
+        {header}
+        <EmptyState reason="no-match" detail="Select a run/dataset scope from the top bar first." />
+      </div>
+    )
   }
 
-  if (umapQuery.isLoading) return <LoadingState label="Loading UMAP…" />
-  if (umapQuery.isError) return <ErrorState error={umapQuery.error} onRetry={() => umapQuery.refetch()} />
-  if (points.length === 0) return <EmptyState reason="no-match" />
+  if (umapQuery.isLoading) {
+    return (
+      <div className="umap-view">
+        {header}
+        <LoadingState label="Loading UMAP…" />
+      </div>
+    )
+  }
+  if (umapQuery.isError) {
+    return (
+      <div className="umap-view">
+        {header}
+        <ErrorState error={umapQuery.error} onRetry={() => umapQuery.refetch()} />
+      </div>
+    )
+  }
+  if (points.length === 0) {
+    return (
+      <div className="umap-view">
+        {header}
+        <EmptyState reason="no-match" />
+      </div>
+    )
+  }
 
   const groups = Array.from(new Set(points.map((p) => (p[colorField] ?? 'unknown') as string)))
 
@@ -59,6 +93,7 @@ export function UmapView() {
 
   return (
     <div className="umap-view">
+      {header}
       <div className="umap-view__toolbar">
         <label>
           Color by

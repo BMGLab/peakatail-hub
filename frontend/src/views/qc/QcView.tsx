@@ -2,6 +2,7 @@ import { useBenchmarks, useConcordance, useRunQc } from '@lib/api/hooks'
 import { useScopeStore } from '@state/useScopeStore'
 import { PlotlyChart } from '@charts/PlotlyChart'
 import { EmptyState, ErrorState, LoadingState } from '@views/shared/ViewStates'
+import { PageHeader } from '@views/shared/PageHeader'
 import './QcView.css'
 
 export function QcView() {
@@ -10,13 +11,46 @@ export function QcView() {
   const concordanceQuery = useConcordance(runId)
   const benchmarksQuery = useBenchmarks(runId)
 
+  const header = (
+    <PageHeader
+      title="Run / QC"
+      description="The cell and PAS survival funnel for the selected run: how many poly(A) sites and cells were retained or dropped at each of the seven pipeline stages (raw reads through clustering), plus cross-strategy clustering concordance and config provenance. Use it to sanity-check a run before trusting its Findings."
+    />
+  )
+
   if (!runId) {
-    return <EmptyState reason="no-match" detail="Select a run from the top bar scope selector first." />
+    return (
+      <div className="qc-view-page">
+        {header}
+        <EmptyState reason="no-match" detail="Select a run from the top bar scope selector first." />
+      </div>
+    )
   }
 
-  if (qcQuery.isLoading) return <LoadingState label="Loading QC…" />
-  if (qcQuery.isError) return <ErrorState error={qcQuery.error} onRetry={() => qcQuery.refetch()} />
-  if (!qcQuery.data) return <EmptyState reason="not-indexed" detail={`Run ${runId} has no QC stats indexed yet.`} />
+  if (qcQuery.isLoading) {
+    return (
+      <div className="qc-view-page">
+        {header}
+        <LoadingState label="Loading QC…" />
+      </div>
+    )
+  }
+  if (qcQuery.isError) {
+    return (
+      <div className="qc-view-page">
+        {header}
+        <ErrorState error={qcQuery.error} onRetry={() => qcQuery.refetch()} />
+      </div>
+    )
+  }
+  if (!qcQuery.data) {
+    return (
+      <div className="qc-view-page">
+        {header}
+        <EmptyState reason="not-indexed" detail={`Run ${runId} has no QC stats indexed yet.`} />
+      </div>
+    )
+  }
 
   const qc = qcQuery.data
   // Merge the two per-stage drop arrays into one row set for the table/chart
@@ -29,7 +63,9 @@ export function QcView() {
   }))
 
   return (
-    <div className="qc-view">
+    <div className="qc-view-page">
+      {header}
+      <div className="qc-view">
       <section className="panel qc-view__section">
         <h3>Survival funnel</h3>
         <p className="state-message">
@@ -108,6 +144,7 @@ export function QcView() {
         {benchmarksQuery.isError && <ErrorState error={benchmarksQuery.error} />}
         {benchmarksQuery.data && <p className="state-message">{benchmarksQuery.data.note}</p>}
       </section>
+      </div>
     </div>
   )
 }

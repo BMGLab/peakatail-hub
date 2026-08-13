@@ -12,14 +12,6 @@
   padding: var(--space-4, 8px) 0;
 }
 
-.browse-table__title {
-  margin: 0;
-  font-size: var(--fs-title, 16px);
-  font-weight: var(--fw-semibold, 600);
-  color: var(--text-h);
-  white-space: nowrap;
-}
-
 .browse-table__search {
   flex: 1;
   max-width: 360px;

@@ -95,6 +95,7 @@ export function PasBrowser() {
   return (
     <BrowseTable
       title="PAS"
+      description="The full poly(A)-site ledger for the selected run -- both sites that survived to the final matrix and ones dropped along the way, with the pipeline stage and reason for any drop. Click a row to open its gene, or trace it fully in Audit if it's intergenic."
       placeholder="Search pas_uid / gene_id…"
       columns={columns}
       rows={rows}

@@ -7,18 +7,6 @@
   margin: 0 auto;
 }
 
-.dashboard-view__header h2 {
-  margin: 0 0 var(--space-2);
-  font-size: var(--fs-h2);
-  color: var(--ink);
-}
-
-.dashboard-view__subtitle {
-  margin: 0;
-  color: var(--ink-muted);
-  font-size: var(--fs-small);
-}
-
 .dashboard-view__overview {
   display: grid;
   grid-template-columns: repeat(4, 1fr);

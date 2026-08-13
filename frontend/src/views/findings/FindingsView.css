@@ -1,7 +1,15 @@
 .findings-view {
   display: flex;
-  gap: 16px;
+  flex-direction: column;
   height: 100%;
+  min-height: 0;
+}
+
+.findings-view__body {
+  display: flex;
+  gap: 16px;
+  flex: 1;
+  min-height: 0;
 }
 
 .findings-view__facets {

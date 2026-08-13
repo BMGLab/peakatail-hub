@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { usePasProvenance, useCellProvenance } from '@lib/api/hooks'
 import { useSelectionStore } from '@state/useSelectionStore'
 import { EmptyState, LoadingState, MissingArtifactNotice } from '@views/shared/ViewStates'
+import { PageHeader } from '@views/shared/PageHeader'
 import type { CellDetail, PasDetail } from '@lib/contract/types'
 import './AuditView.css'
 
@@ -95,9 +96,11 @@ export function AuditView() {
 
   return (
     <div className="audit-view">
+      <PageHeader
+        title="Audit"
+        description="Trace a single PAS or cell through the pipeline ledger: which stage it entered at, which filter it survived at each step, and -- if it didn't make it to switch_diff -- exactly where and why it was dropped. Use this to sanity-check a suspicious Findings row or a missing gene/cell against the raw provenance record."
+      />
       <div className="audit-view__search panel">
-        <h3>Provenance / audit</h3>
-        <p className="state-message">Trace any PAS or cell through the ledger: entered -&gt; survived which thresholds -&gt; dropped where/why.</p>
         <div className="audit-view__search-row">
           <label>
             PAS UID
@@ -117,6 +120,7 @@ export function AuditView() {
           </button>
         </div>
       </div>
+
 
       <div className="audit-view__results">
         {activePas && pasQuery.isLoading && <LoadingState label="Loading PAS ledger…" />}

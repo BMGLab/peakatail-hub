@@ -78,6 +78,7 @@ export function CellBrowser() {
   return (
     <BrowseTable
       title="Cells"
+      description="The full cell ledger for the selected run -- every barcode that entered the pipeline, its cluster/celltype assignment if it survived, and its PAS coverage count. Dropped cells show the stage and reason they were filtered out."
       placeholder="Search barcode / cell_uid / cluster…"
       columns={columns}
       rows={rows}

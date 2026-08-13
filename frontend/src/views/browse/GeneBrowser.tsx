@@ -74,6 +74,7 @@ export function GeneBrowser() {
   return (
     <BrowseTable
       title="Genes"
+      description="Every gene with at least one poly(A) site surviving filtering in the selected run. Search by gene symbol or Ensembl gene id; click a row to open it in the Browser track view."
       placeholder="Search gene_id (symbol/ENSG)…"
       columns={columns}
       rows={rows}

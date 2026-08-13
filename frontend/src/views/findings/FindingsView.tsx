@@ -9,6 +9,7 @@ import { usePinStore } from '@state/usePinStore'
 import type { FindingRow } from '@lib/contract/types'
 import { caveatFlagsFor } from './caveatFlags'
 import { EmptyState, ErrorState, LoadingState } from '@views/shared/ViewStates'
+import { PageHeader } from '@views/shared/PageHeader'
 import './FindingsView.css'
 
 // Per-column display width (px), read via `column.columnDef.meta.width` in
@@ -182,6 +183,11 @@ export function FindingsView() {
 
   return (
     <div className="findings-view">
+      <PageHeader
+        title="Findings"
+        description="Every differential PAS-usage call across strategies (fisher, nb_pairwise, nb_multi…), cell types, and arms (diff/length). Filter by facet or q-value at left; a row's caveat badges flag calls that carry a known statistical limitation (e.g. pseudoreplicated significance) -- treat a flagged q-value as suggestive, not confirmatory. Click a row to open its gene in the Browser."
+      />
+      <div className="findings-view__body">
       <aside className="findings-view__facets panel">
         <h3>Facets</h3>
         {facetsQuery.isLoading && <LoadingState label="Loading facets…" />}
@@ -361,6 +367,7 @@ export function FindingsView() {
           )}
         </div>
       </section>
+      </div>
     </div>
   )
 }
