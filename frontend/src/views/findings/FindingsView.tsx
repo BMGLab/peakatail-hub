@@ -320,19 +320,13 @@ export function FindingsView() {
       </aside>
 
       <section className="findings-view__table-wrap">
-        {/* science-reports finding (2026-08-14): proportion's length trend
-            is an engine defect (uniform-padded, ~98% synthetic, constant
-            across every stage), not a real "no shortening" result -- same
-            caveat as the length-strategy selector on the cell-type view.
-            Surfaced here too since Findings' strategy facet is a second,
-            independent way to land on proportion rows. */}
-        {filters.strategy === 'proportion' && (
-          <div className="findings-view__proportion-warning" role="alert">
-            ⚠ Invalid — proportion's length trend is a known engine defect (uncovered cells are synthetically padded
-            with 1/n_PAS), not a real biological result. slope/spearman below are the raw (broken) numbers, shown for
-            transparency, not as a finding to trust.
-          </div>
-        )}
+        {/* proportion's engine-defect warning was removed 2026-08-14 (same
+            day) once the padding bug was fixed upstream in ema and
+            reconfirmed with real varying per-celltype slopes (not the old
+            flat 0.328 constant) -- proportion is a normal, trustworthy
+            strategy again, same as classic/shannon. See
+            ResultsCelltypeView's LENGTH_STRATEGIES comment for the fuller
+            history if this needs revisiting. */}
         <div className="findings-view__toolbar">
           <span>{findingsQuery.data ? `${findingsQuery.data.total} findings (showing ${rows.length})` : ''}</span>
           <button type="button" disabled={selectedIds.size === 0} onClick={pinSelected}>

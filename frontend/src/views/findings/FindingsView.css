@@ -45,20 +45,6 @@
   gap: 8px;
 }
 
-/* proportion's engine-defect caveat (2026-08-14) -- shown when the
-   strategy facet is scoped to 'proportion', same warn-toned treatment as
-   ResultsCelltypeView's invalid length-strategy tab. */
-.findings-view__proportion-warning {
-  padding: 8px 12px;
-  margin-bottom: 8px;
-  border: 1px solid var(--warn);
-  border-radius: var(--radius);
-  background: var(--warn-tint);
-  color: var(--warn);
-  font-size: 12px;
-  line-height: 1.4;
-}
-
 .findings-view__toolbar {
   display: flex;
   align-items: center;

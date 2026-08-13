@@ -113,32 +113,27 @@ describe('ResultsView (Cell Types)', () => {
     expect(trendPanel.getByRole('tab', { name: /classic/i })).not.toBeDisabled()
   })
 
-  // science-reports finding (2026-08-14): proportion's length trend is an
-  // engine defect (uniform-padded, ~98% synthetic, constant across every
-  // stage) -- NOT a real "no shortening" biological result. It must never
-  // be presented as selectable, on ANY celltype, even one whose mock data
-  // technically has a proportion trend row (unlike "not computed", this is
-  // not a data-availability problem -- recomputing it changes nothing).
-  it('always disables proportion as invalid (engine defect), never as a selectable trend', async () => {
+  // science-reports finding (2026-08-14, same day): the engine's proportion
+  // padding defect was FIXED and reconfirmed with real varying per-celltype
+  // slopes (not the old flat 0.328 constant) -- proportion is a normal,
+  // selectable, trustworthy strategy again, same as classic/shannon. This
+  // replaces the earlier "always disables proportion as invalid" test.
+  it('proportion is a real, selectable length strategy (not flagged invalid)', async () => {
     useScopeStore.setState({ runId: 'fixture-run-0001', datasetId: 'ds1' })
-    // 'Tumor epithelial' DOES have a proportion trend row in the mock fixture
-    // (see mockData.ts) -- proving the block is unconditional, not a
-    // "not computed" gap that happens to coincide here.
     renderResults('/results/Tumor%20epithelial')
 
     const trendHeading = await screen.findByRole('heading', { name: /3'UTR length trend across stages/i })
     const trendPanel = within(trendHeading.closest('.panel') as HTMLElement)
 
     const proportionTab = trendPanel.getByRole('tab', { name: /^proportion/i })
-    expect(proportionTab).toBeDisabled()
-    expect(within(proportionTab).getByText(/invalid/i)).toBeInTheDocument()
-    expect(proportionTab).toHaveAttribute('title', expect.stringMatching(/engine defect/i))
+    expect(proportionTab).not.toBeDisabled()
+    expect(within(proportionTab).queryByText(/invalid/i)).not.toBeInTheDocument()
 
-    // Clicking it does nothing -- classic stays selected, disabled buttons don't fire onClick.
     const user = userEvent.setup()
     await user.click(proportionTab)
-    expect(trendPanel.getByRole('tab', { name: /classic/i })).toHaveAttribute('aria-selected', 'true')
-    expect(proportionTab).toHaveAttribute('aria-selected', 'false')
+    // Switching tabs actually selects it and swaps in its own value_col.
+    await waitFor(() => expect(proportionTab).toHaveAttribute('aria-selected', 'true'))
+    expect(trendPanel.getByRole('columnheader', { name: /mean proportion/i })).toBeInTheDocument()
   })
 
   // 2026-08-14: makes the length results BROWSABLE -- LengthTrendTable

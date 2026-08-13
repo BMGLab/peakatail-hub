@@ -103,12 +103,12 @@ describe('FindingsView', () => {
     })
   })
 
-  // science-reports finding (2026-08-14): proportion's length trend is an
-  // engine defect (uniform-padded, ~98% synthetic, constant across every
-  // stage), not a real result -- selecting it in Findings' strategy facet
-  // (a second, independent way to land on proportion rows, alongside the
-  // cell-type view's length selector) must show the same "invalid" warning.
-  it('selecting the proportion strategy shows the invalid-engine-defect warning', async () => {
+  // science-reports finding (2026-08-14, same day): proportion's engine
+  // padding defect was fixed and reconfirmed with real varying data --
+  // selecting it in Findings' strategy facet now shows real rows, no
+  // warning, same as classic/shannon. Replaces the earlier
+  // "shows the invalid-engine-defect warning" test.
+  it('selecting the proportion strategy shows real rows, no warning', async () => {
     const user = userEvent.setup()
     renderWithProviders(<FindingsView />)
 
@@ -116,6 +116,10 @@ describe('FindingsView', () => {
     const strategySelect = await screen.findByRole('combobox', { name: /strategy/i })
     await user.selectOptions(strategySelect, 'proportion')
 
-    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/engine defect/i))
+    await waitFor(() => {
+      const toolbar = screen.getByText(/findings \(showing/i)
+      expect(toolbar.textContent).toMatch(/20 findings/) // 60 mock length rows / 3 strategies
+    })
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 })

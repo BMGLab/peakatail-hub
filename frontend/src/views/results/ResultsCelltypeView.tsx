@@ -22,26 +22,19 @@ type DiffStrategy = 'fisher' | 'nb_multi'
 // itself. A strategy tab is disabled, not hidden, when its trend is absent:
 // truthful ("not computed"), not silently missing.
 //
-// `proportion` (2026-08-14, science-reports finding): its trend is
-// UNCONDITIONALLY disabled, never just "not yet computed" -- the engine
-// pads every uncovered (gene,cell) pair with 1/n_PAS, so ~98% of
-// proportion.tsv is synthetic and the per-celltype mean comes out constant
-// across every stage (only ~3 distinct values across all 24 celltypes,
-// = 1/mean_PAS). The computed proportion trend/per-gene table DOES exist
-// on disk and IS indexed (same pipeline as shannon -- see
-// index/indexer.py's per-strategy subdir layout), so this is deliberately
-// a presentation-layer block, not a data gap: showing it as flat "no
-// shortening" would be read as a real biological null result when it's
-// actually an engine defect. classic and shannon are unaffected -- both
-// vary for real. Never remove this without re-verifying the padding bug
-// is actually fixed upstream in ema.
+// `proportion` was TEMPORARILY flagged invalid (2026-08-14, science-reports
+// finding: the engine padded every uncovered (gene,cell) pair with
+// 1/n_PAS, so the trend came out a near-constant, not real biology) --
+// FIXED upstream in ema as of 2026-08-14 (later the same day) and
+// reconfirmed with real varying data (slopes -0.007..+0.006, 13
+// decreasing/9 increasing across 24 celltypes, not a flat 0.328). The
+// `invalidReason` mechanism below still exists for any strategy that
+// genuinely needs it in the future -- just not proportion anymore. The old
+// degenerate files are preserved server-side as `.PRE_FIX_bak`, never read
+// by the indexer (see index/indexer.py's `_KNOWN_LENGTH_TREND_SUBDIRS`).
 const LENGTH_STRATEGIES: { key: LengthStrategy; label: string; invalidReason?: string }[] = [
   { key: 'classic', label: 'Classic (PDUI)' },
-  {
-    key: 'proportion',
-    label: 'Proportion',
-    invalidReason: 'Invalid — uniform-padded output (engine defect): uncovered cells are synthetically filled with 1/n_PAS, so the trend is a constant, not real biology.',
-  },
+  { key: 'proportion', label: 'Proportion' },
   { key: 'shannon', label: 'Shannon entropy' },
 ]
 
