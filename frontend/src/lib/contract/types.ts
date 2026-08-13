@@ -18,6 +18,8 @@ export interface PasLedgerRow {
   pas_uid: string
   snap_distance_bp: number | null
   gene_id: string | null
+  /** Human-readable symbol (e.g. "SAMD11"), 2026-08-14 -- from annotatedpas.bed's own gene_symbol column. */
+  gene_symbol: string | null
   gene_distance_bp: number | null
   tier: string | null
   last_stage: string
@@ -46,6 +48,10 @@ export interface FindingRow {
   finding_uid: string
   pas_uid: string
   gene_id: string
+  /** Human-readable symbol (e.g. "SAMD11"), 2026-08-14 -- hub-side enrichment
+   * joined from pas_ledger at query time (backend schemas.py FindingRowView),
+   * not part of the raw findings_long grain. null when unavailable. */
+  gene_symbol: string | null
   canonical_cluster: string
   celltype: string | null
   strategy: 'fisher' | 'nb_pairwise' | 'nb_multi'
@@ -169,11 +175,33 @@ export interface SwitchLengthAvailability {
  * per-cell x per-gene and can be 100GB+ for one run -- never fully
  * ingested, see the backend's switch_availability table), `trend` = the
  * fully-ingested length-across-stages headline. */
+/** nb_multi omnibus counts for one celltype -- a DIFFERENT result grain than
+ * `diff.fisher` (an omnibus LRT across all stages, no canonical_cluster/
+ * direction), 2026-08-14. `n` = total PAS tested, `n_significant` = qvalue < 0.05. */
+export interface SwitchNbMultiSummary {
+  n: number
+  n_significant: number
+}
+
 export interface SwitchCelltypeResult {
   celltype: string
   diff: Record<string, number>
+  nb_multi: SwitchNbMultiSummary | null
   length: Record<string, SwitchLengthAvailability>
   trend: SwitchTrend | null
+}
+
+/** One row of `GET /runs/{id}/switch/{celltype}/nb-multi` -- the per-PAS
+ * drill-down behind `SwitchCelltypeResult.nb_multi`'s counts. */
+export interface SwitchNbMultiRow {
+  pas_id: string
+  gene_id: string | null
+  pvalue: number | null
+  qvalue: number | null
+  test_stat: number | null
+  df: number | null
+  dispersion: number | null
+  n_cells: number | null
 }
 
 export interface ClusterMatchAvailability {
@@ -260,6 +288,8 @@ export interface RunQc {
  * gene with at least one surviving PAS. */
 export interface GeneListRow {
   gene_id: string
+  /** Human-readable symbol (e.g. "SAMD11"), 2026-08-14. */
+  gene_symbol: string | null
   chrom: string | null
   start: number | null
   end: number | null

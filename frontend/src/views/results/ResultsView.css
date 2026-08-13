@@ -33,6 +33,11 @@
   color: var(--accent);
 }
 
+.results-view__full-id {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
 .results-view__grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));

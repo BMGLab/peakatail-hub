@@ -1,18 +1,25 @@
 import { useMemo } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { useFindings, useRunSwitch, useRunSwitchTrendGenes } from '@lib/api/hooks'
+import { useFindings, useRunSwitch, useRunSwitchNbMulti, useRunSwitchTrendGenes } from '@lib/api/hooks'
 import { useScopeStore } from '@state/useScopeStore'
+import { celltypeLabel } from '@lib/celltypeLabel'
 import { EmptyState, ErrorState, LoadingState } from '@views/shared/ViewStates'
 import { formatBytes } from './ResultsView'
 import './ResultsView.css'
 
 /**
- * One cell type's B3_switch results: the length-trend-across-stages
- * headline (run-level AND top genes by |slope|), and its switching genes
- * (findings_long filtered to this celltype -- sorted client-side by qvalue
- * ascending since the backend's /findings endpoint orders by finding_uid,
- * not significance; a real ranking is the whole point of this table).
- * Each gene row opens a real ema geneview scoped to this celltype.
+ * One cell type's B3_switch results, ALL of them combined in one view
+ * (2026-08-14 fix -- this used to only show fisher; nb_multi, a genuinely
+ * different switch-diff strategy/result grain, was invisible): the
+ * length-trend-across-stages headline (run-level AND top genes by |slope|),
+ * fisher's switching genes (findings_long filtered to this celltype --
+ * sorted client-side by qvalue ascending since the backend's /findings
+ * endpoint orders by finding_uid, not significance), nb_multi's omnibus
+ * hits (a separate table/endpoint -- nb_multi_omnibus.tsv has no
+ * canonical_cluster/direction, so it can't live in findings_long, see
+ * backend schema.py's switch_nb_multi table docstring), and length-result
+ * availability. Each gene row opens a real ema geneview scoped to this
+ * celltype.
  */
 export function ResultsCelltypeView() {
   const { celltype } = useParams<{ celltype: string }>()
@@ -22,6 +29,7 @@ export function ResultsCelltypeView() {
   const switchQuery = useRunSwitch(runId)
   const trendGenesQuery = useRunSwitchTrendGenes(runId, celltype ?? null, 25)
   const findingsQuery = useFindings({ run_id: runId ?? undefined, celltype: celltype ?? undefined, limit: 500 })
+  const nbMultiQuery = useRunSwitchNbMulti(runId, celltype ?? null, 25)
 
   const sortedFindings = useMemo(() => {
     const rows = findingsQuery.data?.rows ?? []
@@ -52,7 +60,8 @@ export function ResultsCelltypeView() {
         <Link to="/results" className="results-view__back">
           ◀ Cell Types
         </Link>
-        <h2>{celltype}</h2>
+        <h2 title={celltype}>{celltypeLabel(celltype)}</h2>
+        <span className="mono results-view__full-id">{celltype}</span>
       </header>
 
       <div className="panel results-view__trend-panel">
@@ -124,18 +133,21 @@ export function ResultsCelltypeView() {
       </div>
 
       <div className="panel results-view__trend-panel">
-        <h4>Switching genes (switch-diff findings, top 100 by q-value)</h4>
+        <h4>
+          Switching genes -- fisher pairwise contrasts (top 100 by q-value){' '}
+          {entry.diff.fisher !== undefined && <span className="badge badge--neutral">{entry.diff.fisher.toLocaleString()} total</span>}
+        </h4>
         {findingsQuery.isLoading ? (
           <LoadingState label="Loading findings…" />
         ) : sortedFindings.length === 0 ? (
-          <p className="state-message">No switch-diff findings for this celltype in this run.</p>
+          <p className="state-message">No fisher switch-diff findings for this celltype in this run.</p>
         ) : (
           <table className="gene-view__table">
             <thead>
               <tr>
+                <th>Gene</th>
                 <th>gene_id</th>
                 <th>arm</th>
-                <th>strategy</th>
                 <th>direction</th>
                 <th>qvalue</th>
                 <th>Δ proportion</th>
@@ -144,12 +156,59 @@ export function ResultsCelltypeView() {
             <tbody>
               {sortedFindings.map((f) => (
                 <tr key={f.finding_uid} onClick={() => navigate(`/genes/${f.gene_id}?celltype=${encodeURIComponent(celltype)}`)} style={{ cursor: 'pointer' }}>
+                  <td>{f.gene_symbol ?? '—'}</td>
                   <td className="mono">{f.gene_id}</td>
                   <td>{f.arm}</td>
-                  <td>{f.strategy}</td>
                   <td>{f.direction}</td>
                   <td>{f.qvalue.toFixed(4)}</td>
                   <td>{f.delta_proportion.toFixed(3)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      <div className="panel results-view__trend-panel">
+        <h4>
+          nb_multi omnibus hits (top 25 by q-value){' '}
+          {entry.nb_multi && (
+            <span className="badge badge--neutral">
+              {entry.nb_multi.n_significant.toLocaleString()} / {entry.nb_multi.n.toLocaleString()} significant (q&lt;0.05)
+            </span>
+          )}
+        </h4>
+        <p className="state-message">
+          A different result grain than fisher: one omnibus likelihood-ratio test per PAS across ALL stages at
+          once, not a pairwise contrast -- no canonical_cluster/direction columns exist for it.
+        </p>
+        {nbMultiQuery.isLoading ? (
+          <LoadingState label="Loading nb_multi hits…" />
+        ) : (nbMultiQuery.data ?? []).length === 0 ? (
+          <p className="state-message">No nb_multi results for this celltype in this run.</p>
+        ) : (
+          <table className="gene-view__table">
+            <thead>
+              <tr>
+                <th>gene_id</th>
+                <th>pas_id</th>
+                <th>qvalue</th>
+                <th>test_stat</th>
+                <th>n_cells</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(nbMultiQuery.data ?? []).map((row) => (
+                <tr
+                  key={row.pas_id}
+                  onClick={() => row.gene_id && navigate(`/genes/${row.gene_id}?celltype=${encodeURIComponent(celltype)}`)}
+                  style={{ cursor: row.gene_id ? 'pointer' : undefined }}
+                >
+                  <td className="mono">{row.gene_id ?? '—'}</td>
+                  <td className="mono">{row.pas_id}</td>
+                  <td>{row.qvalue?.toFixed(4) ?? '—'}</td>
+                  <td>{row.test_stat?.toFixed(1) ?? '—'}</td>
+                  <td>{row.n_cells ?? '—'}</td>
                 </tr>
               ))}
             </tbody>

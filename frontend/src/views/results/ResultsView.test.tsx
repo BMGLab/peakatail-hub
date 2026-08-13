@@ -24,18 +24,24 @@ describe('ResultsView (Cell Types)', () => {
     expect(screen.getByText(/select a run from the top bar scope selector first/i)).toBeInTheDocument()
   })
 
-  it('lists the run\'s cell types with their 3\'UTR trend and drills into one', async () => {
+  it('lists the run\'s cell types with a clean display label (celltypeLabel) and drills into one', async () => {
     useScopeStore.setState({ runId: 'fixture-run-0001', datasetId: 'ds1' })
     renderResults()
 
-    await waitFor(() => expect(screen.getByText('Tumor epithelial')).toBeInTheDocument())
-    expect(screen.getByText('T cell')).toBeInTheDocument()
+    // mock celltypes are already-clean strings ('Tumor epithelial', 'T cell', ...)
+    // -- celltypeLabel title-cases them (no known raw-id prefix to strip),
+    // so the DISPLAYED text is "Tumor Epithelial"/"T Cell" while the full
+    // original string stays the card's title tooltip + the actual query key.
+    await waitFor(() => expect(screen.getByText('Tumor Epithelial')).toBeInTheDocument())
+    expect(screen.getByText('T Cell')).toBeInTheDocument()
 
     const user = userEvent.setup()
-    await user.click(screen.getByText('Tumor epithelial'))
+    await user.click(screen.getByText('Tumor Epithelial'))
 
-    await waitFor(() => expect(screen.getByRole('heading', { name: 'Tumor epithelial' })).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Tumor Epithelial' })).toBeInTheDocument())
+    expect(screen.getByText('Tumor epithelial')).toBeInTheDocument() // full id kept, shown below the header
     expect(screen.getByRole('heading', { name: /3'UTR length trend across stages/i })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: /switching genes/i })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /nb_multi omnibus hits/i })).toBeInTheDocument()
   })
 })

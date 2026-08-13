@@ -90,6 +90,11 @@ CREATE TABLE IF NOT EXISTS pas_ledger (
     unified_pas_id    VARCHAR,
     snap_distance_bp  BIGINT,
     gene_id           VARCHAR,
+    -- Human-readable gene symbol (e.g. "SAMD11"), 2026-08-14 -- sourced from
+    -- annotatedpas.bed's own gene_symbol column at index time (see
+    -- index/indexer.py::_pas_annot_df); NULL on the real provenance ledger
+    -- (fixture runs) or any PAS the annotation step didn't assign a gene to.
+    gene_symbol       VARCHAR,
     gene_distance_bp  BIGINT,
     tier              VARCHAR,
     last_stage        VARCHAR,
@@ -202,9 +207,36 @@ CREATE TABLE IF NOT EXISTS switch_availability (
     file_size_bytes  BIGINT
 );
 
+-- switch-diff nb_multi omnibus results (2026-08-14): a DIFFERENT row grain
+-- than fisher's switch_diff_long.parquet (folded into findings_long, see
+-- index/indexer.py::_switch_diff_findings_df) -- nb_multi_omnibus.tsv is one
+-- row per PAS x celltype (an omnibus likelihood-ratio test across ALL
+-- stages at once, not a pairwise contrast: no canonical_cluster/
+-- comparison_cluster/direction/arm columns exist for it), so it cannot be
+-- folded into findings_long without fabricating fields that don't exist.
+-- Small (~700KB/~8k rows for a 24-celltype cohort run) -- fully ingested,
+-- unlike B3_switch/length. gene_id is joined in at index time from
+-- pas_ledger (same run-level unified pas_id space, see
+-- index/indexer.py::_switch_nb_multi_df) so results are still gene-
+-- browsable even though the raw TSV only has pas_id.
+CREATE TABLE IF NOT EXISTS switch_nb_multi (
+    run_id       VARCHAR,
+    celltype     VARCHAR,
+    pas_id       VARCHAR,
+    gene_id      VARCHAR,   -- joined from pas_ledger; NULL if not resolvable
+    pvalue       DOUBLE,
+    qvalue       DOUBLE,
+    test_stat    DOUBLE,
+    df           INTEGER,
+    dispersion   DOUBLE,
+    n_cells      BIGINT
+);
+
 CREATE INDEX IF NOT EXISTS idx_switch_trend_summary_run ON switch_trend_summary(run_id);
 CREATE INDEX IF NOT EXISTS idx_switch_trend_gene_run ON switch_trend_gene(run_id, celltype);
 CREATE INDEX IF NOT EXISTS idx_switch_availability_run ON switch_availability(run_id);
+CREATE INDEX IF NOT EXISTS idx_switch_nb_multi_run ON switch_nb_multi(run_id, celltype);
+CREATE INDEX IF NOT EXISTS idx_switch_nb_multi_gene ON switch_nb_multi(run_id, gene_id);
 
 CREATE INDEX IF NOT EXISTS idx_pas_ledger_run ON pas_ledger(run_id);
 CREATE INDEX IF NOT EXISTS idx_pas_ledger_gene ON pas_ledger(run_id, gene_id);
@@ -227,6 +259,7 @@ CREATE INDEX IF NOT EXISTS idx_runs_source ON runs(source_id);
 _MIGRATIONS = """
 ALTER TABLE runs ADD COLUMN IF NOT EXISTS source_id VARCHAR;
 ALTER TABLE runs ADD COLUMN IF NOT EXISTS atlas_snap_available BOOLEAN;
+ALTER TABLE pas_ledger ADD COLUMN IF NOT EXISTS gene_symbol VARCHAR;
 """
 
 

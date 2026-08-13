@@ -244,6 +244,18 @@ class PasLedgerRow(BaseModel):
         default="",
         description="Ensembl gene id assigned by PAS->gene distance join. Empty string if INTERGENIC (tier).",
     )
+    gene_symbol: str | None = Field(
+        default=None,
+        description=(
+            "Human-readable gene symbol (e.g. 'SAMD11'), when known -- additive field "
+            "(2026-08-14), None on any writer/fixture that doesn't populate it yet. "
+            "Real engine output carries this in annotatedpas.bed's own gene_symbol "
+            "column, alongside gene_id -- unlike GeneSummary.gene_name (GTF-derived, "
+            "single-gene detail only), this is a bulk-cheap per-PAS field meant for "
+            "list/table views (PAS browser, Genes browser, Findings) without a "
+            "per-row GTF parse."
+        ),
+    )
     gene_distance_bp: int | None = Field(
         default=None, description="Distance (bp) from this PAS to gene_id's 3' end, if assigned."
     )

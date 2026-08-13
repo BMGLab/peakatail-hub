@@ -3,6 +3,7 @@ import { useParams, useSearchParams } from 'react-router-dom'
 import { geneviewRenderUrl } from '@lib/api/client'
 import { useGene, useRunSwitch } from '@lib/api/hooks'
 import { useScopeStore } from '@state/useScopeStore'
+import { celltypeLabel } from '@lib/celltypeLabel'
 import { EmptyState, ErrorState, LoadingState } from '@views/shared/ViewStates'
 import './GeneView.css'
 
@@ -127,8 +128,8 @@ export function GeneView() {
           <select value={celltype ?? ''} onChange={(e) => setSearchParams({ celltype: e.target.value })}>
             {celltypes.length === 0 && <option value="">No cell types for this run</option>}
             {celltypes.map((c) => (
-              <option key={c} value={c}>
-                {c}
+              <option key={c} value={c} title={c}>
+                {celltypeLabel(c)}
               </option>
             ))}
           </select>
@@ -187,7 +188,7 @@ export function GeneView() {
             {engine === 'plotly' ? (
               <iframe
                 key={renderUrl}
-                title={`${gene.gene_name} geneview (plotly, ${celltype})`}
+                title={`${gene.gene_name} geneview (plotly, ${celltypeLabel(celltype)})`}
                 className="gene-view__iframe"
                 src={renderUrl ?? undefined}
                 onLoad={() => setFigureLoading(false)}
@@ -195,7 +196,7 @@ export function GeneView() {
             ) : (
               <img
                 key={renderUrl}
-                alt={`${gene.gene_name} geneview (matplotlib, ${celltype})`}
+                alt={`${gene.gene_name} geneview (matplotlib, ${celltypeLabel(celltype)})`}
                 className="gene-view__img"
                 src={renderUrl ?? undefined}
                 onLoad={() => setFigureLoading(false)}

@@ -101,8 +101,24 @@ class QcFunnel(BaseModel):
     gate_note: str
 
 
+class FindingRowView(FindingRow):
+    """`FindingRow` (the contract model, used as-is elsewhere -- e.g.
+    GeneviewData.findings) PLUS `gene_symbol` (2026-08-14), a hub-side
+    enrichment joined in at query time from `pas_ledger` (see
+    `api/findings.py`). Deliberately NOT added to `FindingRow` itself:
+    that model is a normalized long-format table that intentionally carries
+    no coordinate/gene-symbol data of its own (its own docstring: "sourced
+    from PasLedgerRow, never duplicated onto a findings row",
+    mirroring the same reasoning that keeps chrom/start/end off it) --
+    this is a genuinely hub-specific display shape, same precedent as
+    `GeneSummary.gene_name`.
+    """
+
+    gene_symbol: str | None = None
+
+
 class FindingsPage(BaseModel):
-    items: list[FindingRow]
+    items: list[FindingRowView]
     next_cursor: str | None
     total: int
 
@@ -153,6 +169,11 @@ class GeneListRow(BaseModel):
     """
 
     gene_id: str
+    # Human-readable symbol (2026-08-14), e.g. "SAMD11" -- see
+    # PasLedgerRow.gene_symbol's docstring for the source. None when the run
+    # has no gene_symbol data (fixture/provenance-ledger runs) or every PAS
+    # assigned to this gene had a blank symbol.
+    gene_symbol: str | None = None
     chrom: str | None
     start: int | None
     end: int | None
@@ -345,15 +366,31 @@ class SwitchTrend(BaseModel):
     mean_by_stage: dict[str, float] = Field(default_factory=dict)
 
 
+class SwitchNbMultiSummary(BaseModel):
+    """nb_multi omnibus counts for one celltype -- a DIFFERENT row grain
+    than `diff['fisher']` (no canonical_cluster/direction, see
+    `queries.switch_summary`'s docstring), so it isn't just another `diff`
+    dict key. `n` = total PAS tested, `n_significant` = qvalue < 0.05.
+    """
+
+    n: int
+    n_significant: int
+
+
 class SwitchCelltypeResult(BaseModel):
-    """One celltype's B3_switch results within a run: diff (finding counts
-    per strategy, already queryable in full via `/findings?arm=switch_diff:...`),
-    length (availability only -- see `switch_availability` table docstring),
-    and trend (the fully-ingested length-across-stages headline).
+    """One celltype's B3_switch results within a run -- ALL of them
+    (2026-08-14 fix: nb_multi used to be entirely absent from this combined
+    view even though it's a real, separate switch-diff strategy):
+    diff (fisher finding counts per strategy, already queryable in full via
+    `/findings?arm=switch_diff:...&celltype=...`), nb_multi (omnibus counts;
+    per-PAS drill-down via `/runs/{id}/switch/{celltype}/nb-multi`), length
+    (availability only -- see `switch_availability` table docstring), and
+    trend (the fully-ingested length-across-stages headline).
     """
 
     celltype: str
     diff: dict[str, int] = Field(default_factory=dict)
+    nb_multi: SwitchNbMultiSummary | None = None
     length: dict[str, SwitchLengthAvailability] = Field(default_factory=dict)
     trend: SwitchTrend | None = None
 
@@ -381,6 +418,23 @@ class SwitchTrendGene(BaseModel):
     slope: float | None = None
     spearman: float | None = None
     direction: str | None = None
+
+
+class SwitchNbMultiRow(BaseModel):
+    """One row of `GET /runs/{run_id}/switch/{celltype}/nb-multi` -- the
+    per-PAS drill-down behind `SwitchCelltypeResult.nb_multi`'s counts.
+    `gene_id` is joined in at index time (see index/indexer.py::
+    _switch_nb_multi_df) -- the raw nb_multi_omnibus.tsv only has pas_id.
+    """
+
+    pas_id: str
+    gene_id: str | None = None
+    pvalue: float | None = None
+    qvalue: float | None = None
+    test_stat: float | None = None
+    df: int | None = None
+    dispersion: float | None = None
+    n_cells: int | None = None
 
 
 class GeneviewPasDistanceRow(BaseModel):

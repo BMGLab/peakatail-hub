@@ -13,6 +13,7 @@ import type {
   GeneviewPasDistanceRow,
   GeneviewRenderMeta,
   LengthRow,
+  SwitchNbMultiRow,
   SwitchResults,
   PasDetail,
   PasLedgerRow,
@@ -123,6 +124,7 @@ export const mockFindings: FindingRow[] = Array.from({ length: 240 }, (_, i) => 
     finding_uid: `finding-${i.toString().padStart(4, '0')}`,
     pas_uid: `${gene.chrom}:${gene.start! + i * 37}:${gene.strand}`,
     gene_id: gene.gene_id,
+    gene_symbol: gene.gene_name,
     canonical_cluster: clusters[i % clusters.length]!,
     celltype: celltypes[i % celltypes.length]!,
     strategy,
@@ -171,6 +173,7 @@ export function mockPasForGene(geneId: string): PasDetail[] {
     pas_uid: `${gene.chrom}:${start + i * 400 + 10}:${gene.strand}`,
     snap_distance_bp: i === 0 ? 0 : 12 * i,
     gene_id: gene.gene_id,
+    gene_symbol: gene.gene_name,
     gene_distance_bp: 50 * i,
     tier: i === 0 ? 'primary' : 'alternative',
     last_stage: 'switch_diff',
@@ -302,7 +305,8 @@ const _mockSwitchResults: SwitchResults = {
   cluster_match: { file_path: 'B3_switch/match/cluster_match.tsv', file_size_bytes: 813810 },
   celltypes: celltypes.map((celltype, i) => ({
     celltype,
-    diff: { fisher: 40 + i * 12, nb_multi: 18 + i * 5 },
+    diff: { fisher: 40 + i * 12 },
+    nb_multi: { n: 18 + i * 5, n_significant: 10 + i * 3 },
     length: {
       classic: { file_size_bytes: 600_000_000 + i * 20_000_000 },
       proportion: { file_size_bytes: 2_700_000_000 + i * 90_000_000 },
@@ -328,6 +332,21 @@ export function mockSwitchTrendGenes(celltype: string): { gene_id: string; n_sta
     slope: (entry.trend?.slope ?? 0) * (1 - i * 0.1),
     spearman: entry.trend?.spearman ?? 0,
     direction: entry.trend?.direction ?? 'decreasing',
+  }))
+}
+
+export function mockSwitchNbMulti(celltype: string): SwitchNbMultiRow[] {
+  const entry = _mockSwitchResults.celltypes.find((c) => c.celltype === celltype)
+  if (!entry?.nb_multi) return []
+  return genes.map((g, i) => ({
+    pas_id: `nbmulti-${g.gene_id}-${i}`,
+    gene_id: g.gene_id,
+    pvalue: seeded(i, 20) * 0.01,
+    qvalue: seeded(i, 21) * 0.05,
+    test_stat: 100 + seeded(i, 22) * 1500,
+    df: 1,
+    dispersion: 0.0001,
+    n_cells: Math.floor(seeded(i, 23) * 1000) + 100,
   }))
 }
 
@@ -425,6 +444,7 @@ function paginate<T>(rows: T[], cursor: string | undefined, limit: number): Mock
 
 const mockGeneListRows: GeneListRow[] = genes.map((g) => ({
   gene_id: g.gene_id,
+  gene_symbol: g.gene_name,
   chrom: g.chrom,
   start: g.start,
   end: g.end,

@@ -8,6 +8,7 @@ import { useScopeStore } from '@state/useScopeStore'
 import { useSelectionStore } from '@state/useSelectionStore'
 import { usePinStore } from '@state/usePinStore'
 import type { FindingRow } from '@lib/contract/types'
+import { celltypeLabel } from '@lib/celltypeLabel'
 import { caveatFlagsFor } from './caveatFlags'
 import { EmptyState, ErrorState, LoadingState } from '@views/shared/ViewStates'
 import './FindingsView.css'
@@ -43,8 +44,15 @@ const columns = [
       </span>
     ),
   }),
+  // "Gene" = the human-readable symbol (2026-08-14); gene_id stays its own
+  // column right after it (the stable id, never dropped).
+  columnHelper.accessor('gene_symbol', {
+    header: 'Gene',
+    meta: { width: 110 },
+    cell: (c) => c.getValue() ?? <span className="state-message">—</span>,
+  }),
   columnHelper.accessor('gene_id', {
-    header: 'gene',
+    header: 'gene_id',
     meta: { width: 150 },
     cell: (c) => (
       <span className="mono truncate" title={c.getValue()}>
@@ -67,9 +75,13 @@ const columns = [
     meta: { width: 150 },
     cell: (c) => {
       const v = c.getValue()
+      // Clean display label (2026-08-14) -- the raw id is a long signature
+      // string (e.g. "CELL_TYPES_WANSLEEBEN_HOGAN_2013_MESENCHYAL");
+      // celltypeLabel() derives "Mesenchyal" for display, full id kept as
+      // the tooltip (never discarded -- it's the real query/filter value).
       return v ? (
         <span className="truncate" title={v}>
-          {v}
+          {celltypeLabel(v)}
         </span>
       ) : (
         '—'
@@ -240,8 +252,8 @@ export function FindingsView() {
               <select value={filters.celltype ?? ''} onChange={(e) => updateFilter('celltype', e.target.value || undefined)}>
                 <option value="">All</option>
                 {facets.celltype.map((v) => (
-                  <option key={v} value={v}>
-                    {v}
+                  <option key={v} value={v} title={v}>
+                    {celltypeLabel(v)}
                   </option>
                 ))}
               </select>

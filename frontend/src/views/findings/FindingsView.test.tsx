@@ -15,8 +15,9 @@ describe('FindingsView', () => {
     const toolbar = await screen.findByText(/findings \(showing/i, {}, { timeout: 3000 })
     expect(toolbar.textContent).toMatch(/240 findings/)
 
-    // Table headers render
-    expect(screen.getByRole('columnheader', { name: 'gene' })).toBeInTheDocument()
+    // Table headers render -- "Gene" (symbol, 2026-08-14) alongside gene_id.
+    expect(screen.getByRole('columnheader', { name: 'Gene' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'gene_id' })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: 'strategy' })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: 'caveats' })).toBeInTheDocument()
 

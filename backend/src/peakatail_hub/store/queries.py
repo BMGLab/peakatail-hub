@@ -285,8 +285,8 @@ def count_genes(
     clauses = ["run_id = ?", "dropped_at = ''", "gene_id != ''"]
     params: list[Any] = [run_id]
     if q:
-        clauses.append("gene_id ILIKE ?")
-        params.append(f"%{q}%")
+        clauses.append("(gene_id ILIKE ? OR gene_symbol ILIKE ?)")
+        params.extend([f"%{q}%", f"%{q}%"])
     if chrom is not None:
         clauses.append("chrom = ?")
         params.append(chrom)
@@ -320,8 +320,12 @@ def list_genes(
     clauses = ["run_id = ?", "dropped_at = ''", "gene_id != ''"]
     params: list[Any] = [run_id]
     if q:
-        clauses.append("gene_id ILIKE ?")
-        params.append(f"%{q}%")
+        # Matches gene_id OR gene_symbol (2026-08-14) -- gene_symbol wasn't
+        # indexed before, so this used to be an ENSG-id-only search; now
+        # that the "Gene" column shows a real symbol, users search by that
+        # too ("SAMD11", not just "ENSG00000187634").
+        clauses.append("(gene_id ILIKE ? OR gene_symbol ILIKE ?)")
+        params.extend([f"%{q}%", f"%{q}%"])
     if chrom is not None:
         clauses.append("chrom = ?")
         params.append(chrom)
@@ -333,13 +337,13 @@ def list_genes(
         params.append(end)
     where = " AND ".join(clauses)
     sql = (
-        "SELECT gene_id, any_value(chrom) AS chrom, min(start) AS start, "  # noqa: S608
-        'max("end") AS "end", any_value(strand) AS strand, count(*) AS n_pas '
+        "SELECT gene_id, any_value(NULLIF(gene_symbol, '')) AS gene_symbol, any_value(chrom) AS chrom, "  # noqa: S608
+        'min(start) AS start, max("end") AS "end", any_value(strand) AS strand, count(*) AS n_pas '
         f"FROM pas_ledger WHERE {where} "
         "GROUP BY gene_id ORDER BY gene_id LIMIT ? OFFSET ?"
     )
     rows = con.execute(sql, [*params, limit, offset]).fetchall()
-    cols = ["gene_id", "chrom", "start", "end", "strand", "n_pas"]
+    cols = ["gene_id", "gene_symbol", "chrom", "start", "end", "strand", "n_pas"]
     genes = [dict(zip(cols, row, strict=True)) for row in rows]
     if not genes:
         return genes
@@ -358,6 +362,29 @@ def list_genes(
     for g in genes:
         g["n_findings"] = finding_counts.get(g["gene_id"], 0)
     return genes
+
+
+def gene_symbol_for(con: duckdb.DuckDBPyConnection, run_id: str, gene_id: str) -> str | None:
+    row = con.execute(
+        "SELECT any_value(NULLIF(gene_symbol, '')) FROM pas_ledger WHERE run_id = ? AND gene_id = ?", [run_id, gene_id]
+    ).fetchone()
+    return row[0] if row else None
+
+
+def gene_symbol_map(con: duckdb.DuckDBPyConnection, run_id: str, gene_ids: list[str]) -> dict[str, str]:
+    """Batch `gene_id -> gene_symbol` lookup, scoped to just the given ids
+    (mirrors `list_genes`'s page-scoped n_findings join pattern) -- used to
+    enrich a page of Findings rows with a real gene name without a per-row
+    query. Omits any gene_id with no non-blank symbol on any of its PAS."""
+    if run_id is None or not gene_ids:
+        return {}
+    placeholders = ", ".join("?" for _ in gene_ids)
+    rows = con.execute(
+        f"SELECT gene_id, any_value(NULLIF(gene_symbol, '')) FROM pas_ledger "  # noqa: S608
+        f"WHERE run_id = ? AND gene_id IN ({placeholders}) GROUP BY gene_id",
+        [run_id, *gene_ids],
+    ).fetchall()
+    return {gene_id: symbol for gene_id, symbol in rows if symbol}
 
 
 def gene_summary(con: duckdb.DuckDBPyConnection, run_id: str, gene_id: str) -> dict[str, Any]:
@@ -387,7 +414,7 @@ def gene_summary(con: duckdb.DuckDBPyConnection, run_id: str, gene_id: str) -> d
 
 PAS_COLUMNS = [
     "pas_uid", "orig_pas_key", "chrom", "start", "end", "strand", "unified_pas_id",
-    "snap_distance_bp", "gene_id", "gene_distance_bp", "tier", "last_stage",
+    "snap_distance_bp", "gene_id", "gene_symbol", "gene_distance_bp", "tier", "last_stage",
     "dropped_at", "drop_reason",
 ]
 
@@ -645,14 +672,19 @@ def list_run_datasets(con: duckdb.DuckDBPyConnection, run_id: str) -> list[dict[
 
 
 def switch_summary(con: duckdb.DuckDBPyConnection, run_id: str) -> dict[str, Any]:
-    """Per-celltype rollup of every B3_switch result kind this run has:
-    diff (queried live from findings_long, tagged `arm LIKE 'switch_diff:%'`
-    by `_switch_diff_findings_df`), length (stat-only availability, see
+    """Per-celltype rollup of EVERY B3_switch result kind this run has --
+    not just fisher (2026-08-14 fix: nb_multi was being silently dropped
+    from this rollup even though it was findable via a separate endpoint).
+    `diff` now covers BOTH switch-diff strategies: fisher (queried live from
+    findings_long, tagged `arm LIKE 'switch_diff:%'` by
+    `_switch_diff_findings_df`) and nb_multi (a DIFFERENT row grain --
+    omnibus LRT across all stages, no canonical_cluster/direction -- so it
+    lives in its own `switch_nb_multi` table, see schema.py's docstring
+    there, not findings_long). `length` stays stat-only availability (see
     `switch_availability` table docstring for why row counts aren't
-    ingested), and trend (the fully-ingested length-trend-across-stages
-    headline). One dict per celltype seen in ANY of the three sources, so a
-    celltype with e.g. only a trend result (no diff finding survived
-    thresholds) still shows up rather than being silently dropped.
+    ingested), `trend` the fully-ingested length-trend-across-stages
+    headline. One dict per celltype seen in ANY source, so a celltype with
+    e.g. only a trend result still shows up rather than being dropped.
     """
     diff_rows = con.execute(
         """
@@ -660,6 +692,15 @@ def switch_summary(con: duckdb.DuckDBPyConnection, run_id: str) -> dict[str, Any
         FROM findings_long
         WHERE run_id = ? AND arm LIKE 'switch_diff:%' AND celltype IS NOT NULL
         GROUP BY celltype, strategy
+        """,
+        [run_id],
+    ).fetchall()
+    nb_multi_rows = con.execute(
+        """
+        SELECT celltype, count(*) AS n, count(*) FILTER (WHERE qvalue < 0.05) AS n_significant
+        FROM switch_nb_multi
+        WHERE run_id = ?
+        GROUP BY celltype
         """,
         [run_id],
     ).fetchall()
@@ -682,11 +723,13 @@ def switch_summary(con: duckdb.DuckDBPyConnection, run_id: str) -> dict[str, Any
 
     def _entry(celltype: str) -> dict[str, Any]:
         return by_celltype.setdefault(
-            celltype, {"celltype": celltype, "diff": {}, "length": {}, "trend": None}
+            celltype, {"celltype": celltype, "diff": {}, "nb_multi": None, "length": {}, "trend": None}
         )
 
     for celltype, strategy, n in diff_rows:
         _entry(celltype)["diff"][strategy] = n
+    for celltype, n, n_significant in nb_multi_rows:
+        _entry(celltype)["nb_multi"] = {"n": n, "n_significant": n_significant}
     for celltype, subkind, size in length_rows:
         _entry(celltype)["length"][subkind] = {"file_size_bytes": size}
     for celltype, n_stages, slope, spearman, direction, value_col, mean_by_stage in trend_rows:
@@ -704,6 +747,27 @@ def switch_summary(con: duckdb.DuckDBPyConnection, run_id: str) -> dict[str, Any
         "celltypes": sorted(by_celltype.values(), key=lambda c: c["celltype"]),
         "cluster_match": {"file_path": match_row[0], "file_size_bytes": match_row[1]} if match_row else None,
     }
+
+
+def switch_nb_multi_top(
+    con: duckdb.DuckDBPyConnection, run_id: str, celltype: str, limit: int = 50
+) -> list[dict[str, Any]]:
+    """Top nb_multi omnibus hits (lowest qvalue first) for one celltype --
+    the per-PAS drill-down behind `switch_summary`'s `nb_multi` count, since
+    nb_multi results aren't queryable via `/findings` (different grain, see
+    `switch_summary`'s docstring)."""
+    rows = con.execute(
+        """
+        SELECT pas_id, gene_id, pvalue, qvalue, test_stat, df, dispersion, n_cells
+        FROM switch_nb_multi
+        WHERE run_id = ? AND celltype = ?
+        ORDER BY qvalue ASC NULLS LAST
+        LIMIT ?
+        """,
+        [run_id, celltype, limit],
+    ).fetchall()
+    cols = ["pas_id", "gene_id", "pvalue", "qvalue", "test_stat", "df", "dispersion", "n_cells"]
+    return [dict(zip(cols, row, strict=True)) for row in rows]
 
 
 def switch_trend_top_genes(
@@ -833,7 +897,7 @@ def touch_run_source(con: duckdb.DuckDBPyConnection, run_id: str, source_id: str
 
 _CHILD_TABLES = (
     "pas_ledger", "cell_ledger", "findings_long", "length_long", "umap_points",
-    "switch_trend_summary", "switch_trend_gene", "switch_availability",
+    "switch_trend_summary", "switch_trend_gene", "switch_availability", "switch_nb_multi",
 )
 
 

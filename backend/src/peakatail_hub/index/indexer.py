@@ -135,7 +135,7 @@ def _existing_fingerprints(con: duckdb.DuckDBPyConnection, run_id: str) -> tuple
 def _delete_run(con: duckdb.DuckDBPyConnection, run_id: str) -> None:
     for table in (
         "runs", "pas_ledger", "cell_ledger", "findings_long", "length_long", "umap_points",
-        "switch_trend_summary", "switch_trend_gene", "switch_availability",
+        "switch_trend_summary", "switch_trend_gene", "switch_availability", "switch_nb_multi",
     ):
         con.execute(f"DELETE FROM {table} WHERE run_id = ?", [run_id])  # noqa: S608 -- table name from fixed whitelist above
 
@@ -155,6 +155,9 @@ def _pas_ledger_df(run_id: str, run: Run) -> pd.DataFrame:
                 "unified_pas_id": r.unified_pas_id,
                 "snap_distance_bp": r.snap_distance_bp,
                 "gene_id": r.gene_id,
+                # Real provenance/pas_ledger.tsv has no gene_symbol column --
+                # r.gene_symbol is the PasLedgerRow pydantic default (None).
+                "gene_symbol": r.gene_symbol,
                 "gene_distance_bp": r.gene_distance_bp,
                 "tier": r.tier.value if r.tier is not None else None,
                 "last_stage": r.last_stage,
@@ -256,6 +259,7 @@ def _pas_annot_df(run_id: str, run_dir: Path) -> pd.DataFrame:
     end = raw[2].astype(np.int64)
     pas_id = raw[3].astype(str)
     gene_id = raw[4].astype(str)
+    gene_symbol = raw[5].astype(str)
     strand = raw[6].astype(str)
     # Last column is the tier label ("TIER_1"/.../"INTERGENIC") on every real
     # run inspected, whether the file has 8 or 9 columns.
@@ -281,6 +285,13 @@ def _pas_annot_df(run_id: str, run_dir: Path) -> pd.DataFrame:
             "unified_pas_id": pas_id,
             "snap_distance_bp": snap_distance,
             "gene_id": gene_id,
+            # Empty-string convention (matches gene_id's own ''=INTERGENIC) --
+            # normalized to real None downstream by pandas/DuckDB NULL
+            # handling is NOT automatic for empty strings, so this stays ''
+            # here (consistent with every other str column on this table)
+            # and callers treat '' as "no symbol" the same way they already
+            # treat gene_id=='' as "no gene".
+            "gene_symbol": gene_symbol,
             "gene_distance_bp": gene_distance,
             "tier": tier_label,
             "last_stage": ["annotated"] * n,
@@ -510,6 +521,62 @@ def _switch_diff_findings_df(run_id: str, run_dir: Path) -> pd.DataFrame:
         df["celltype"] = df["celltype"].where(df["celltype"].notna() & (df["celltype"] != ""), celltype)
         df.insert(0, "run_id", run_id)
         frames.append(df)
+    if not frames:
+        return pd.DataFrame()
+    return pd.concat(frames, ignore_index=True)
+
+
+_NB_MULTI_COLUMNS = ["pas_id", "pvalue", "qvalue", "test_stat", "df", "dispersion", "n_cells"]
+
+
+def _switch_nb_multi_df(run_id: str, run_dir: Path, pas_gene_lookup: pd.Series) -> pd.DataFrame:
+    """Real-run nb_multi omnibus results source:
+    `B3_switch/diff/<celltype>/nb_multi/differential/nb_multi_omnibus.tsv`.
+
+    FINDING (2026-08-14): unlike fisher's switch_diff_long.parquet (already
+    FindingRow-shaped, folded straight into findings_long -- see
+    `_switch_diff_findings_df`), nb_multi's own output is a genuinely
+    DIFFERENT grain: one row per PAS x celltype (an omnibus likelihood-ratio
+    test across ALL stages at once), with NO canonical_cluster/
+    comparison_cluster/direction/arm/gene_id columns -- those concepts don't
+    apply to an omnibus test the way they do a pairwise contrast, so this
+    cannot be force-fit into findings_long without fabricating fields. Kept
+    in its own `switch_nb_multi` table instead (see schema.py's table
+    docstring for why). Small (~700KB/~8k rows for a 24-celltype cohort run)
+    -- fully ingested, unlike B3_switch/length.
+
+    `gene_id` is joined in from `pas_gene_lookup` (a `pas_id -> gene_id`
+    Series built by the caller from THIS SAME run's just-computed pas_ledger
+    DataFrame -- same run-level unified pas_id space as annotatedpas.bed,
+    see `_pas_annot_df`) so nb_multi hits stay gene-browsable even though
+    the raw TSV only ever has `pas_id`.
+
+    Returns an empty DataFrame (never raises) when `B3_switch/diff` doesn't
+    exist; one bad celltype's file is logged and skipped, not fatal.
+    """
+    diff_root = run_dir / "B3_switch" / "diff"
+    if not diff_root.is_dir():
+        return pd.DataFrame()
+    frames: list[pd.DataFrame] = []
+    for tsv_path in sorted(diff_root.glob("*/nb_multi/differential/nb_multi_omnibus.tsv")):
+        celltype = tsv_path.parents[2].name  # .../diff/<celltype>/nb_multi/differential/file.tsv
+        try:
+            df = pd.read_csv(tsv_path, sep="\t", dtype={"pas_id": str})
+        except Exception as exc:  # noqa: BLE001 -- one bad file must not abort the whole run
+            logger.warning("run_id=%s: nb_multi_omnibus.tsv %s unreadable, skipping (%s)", run_id, tsv_path, exc)
+            continue
+        missing = [c for c in _NB_MULTI_COLUMNS if c not in df.columns]
+        if missing:
+            logger.warning(
+                "run_id=%s: nb_multi_omnibus.tsv %s missing expected columns %s, skipping",
+                run_id, tsv_path, missing,
+            )
+            continue
+        df = df[_NB_MULTI_COLUMNS].copy()
+        df["gene_id"] = df["pas_id"].map(pas_gene_lookup)
+        df.insert(0, "celltype", celltype)
+        df.insert(0, "run_id", run_id)
+        frames.append(df[["run_id", "celltype", "pas_id", "gene_id", *_NB_MULTI_COLUMNS[1:]]])
     if not frames:
         return pd.DataFrame()
     return pd.concat(frames, ignore_index=True)
@@ -901,6 +968,16 @@ def index_run(con: duckdb.DuckDBPyConnection, run_dir: Path, source_id: str | No
         umap_df = pd.DataFrame()
     switch_trend_summary_df, switch_trend_gene_df = _switch_trend_dfs(run_id, run_dir)
     switch_availability_df = _switch_availability_df(run_id, run_dir)
+    # pas_id -> gene_id lookup for _switch_nb_multi_df's join, built from
+    # THIS run's own just-computed pas_df (same run-level unified pas_id
+    # space as annotatedpas.bed/orig_pas_key -- see _pas_annot_df) --
+    # skipped (empty lookup, gene_id stays null) when pas_df is empty.
+    pas_gene_lookup = (
+        pas_df.drop_duplicates(subset="orig_pas_key", keep="first").set_index("orig_pas_key")["gene_id"]
+        if not pas_df.empty
+        else pd.Series(dtype=str)
+    )
+    switch_nb_multi_df = _switch_nb_multi_df(run_id, run_dir, pas_gene_lookup)
 
     _stats = _run_headline_stats(run_dir, run, len(findings_df), len(length_df))
     atlas_snap_available = _atlas_snap_available(run_dir)
@@ -915,6 +992,7 @@ def index_run(con: duckdb.DuckDBPyConnection, run_dir: Path, source_id: str | No
         _insert_df(con, "switch_trend_summary", switch_trend_summary_df)
         _insert_df(con, "switch_trend_gene", switch_trend_gene_df)
         _insert_df(con, "switch_availability", switch_availability_df)
+        _insert_df(con, "switch_nb_multi", switch_nb_multi_df)
         con.execute(
             """
             INSERT INTO runs (

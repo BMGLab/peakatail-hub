@@ -19,8 +19,24 @@ const columns = [
       </span>
     ),
   }),
+  // "Gene" = the human-readable symbol (2026-08-14); gene_id stays its own
+  // column right after it (the stable id, never dropped).
+  columnHelper.accessor('gene_symbol', {
+    header: 'Gene',
+    cell: (c) => {
+      const v = c.getValue()
+      if (v) return v
+      return c.row.original.gene_id ? (
+        <span className="state-message">—</span>
+      ) : (
+        <span className="badge badge--neutral" title="No gene within max_gene_distance">
+          intergenic
+        </span>
+      )
+    },
+  }),
   columnHelper.accessor('gene_id', {
-    header: 'gene',
+    header: 'gene_id',
     cell: (c) => {
       const v = c.getValue()
       return v ? (
@@ -28,9 +44,7 @@ const columns = [
           {v}
         </span>
       ) : (
-        <span className="badge badge--neutral" title="No gene within max_gene_distance">
-          intergenic
-        </span>
+        '—'
       )
     },
   }),

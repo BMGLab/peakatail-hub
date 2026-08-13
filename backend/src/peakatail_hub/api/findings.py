@@ -3,9 +3,8 @@ from __future__ import annotations
 import duckdb
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from peakatail_contract import FindingRow
 from peakatail_hub.api.deps import get_db
-from peakatail_hub.schemas import FacetValue, FindingsFacets, FindingsPage
+from peakatail_hub.schemas import FacetValue, FindingRowView, FindingsFacets, FindingsPage
 from peakatail_hub.store import queries
 
 router = APIRouter(prefix="/findings", tags=["findings"])
@@ -53,7 +52,15 @@ def list_findings(
     rows = queries.query_findings(con, flt, offset, limit)
     next_offset = offset + len(rows)
     next_cursor = queries.encode_cursor(next_offset) if next_offset < total else None
-    return FindingsPage(items=[FindingRow(**r) for r in rows], next_cursor=next_cursor, total=total)
+    # gene_symbol (2026-08-14): one batch query scoped to just this page's
+    # gene_ids (mirrors queries.list_genes' page-scoped n_findings join),
+    # not a per-row lookup -- see queries.gene_symbol_map.
+    symbols = queries.gene_symbol_map(con, run_id, list({r["gene_id"] for r in rows}))
+    return FindingsPage(
+        items=[FindingRowView(**r, gene_symbol=symbols.get(r["gene_id"])) for r in rows],
+        next_cursor=next_cursor,
+        total=total,
+    )
 
 
 @router.get("/facets", response_model=FindingsFacets)
@@ -81,9 +88,14 @@ def findings_facets(
     )
 
 
-@router.get("/{finding_uid}", response_model=FindingRow)
-def get_finding(finding_uid: str, con: duckdb.DuckDBPyConnection = Depends(get_db)) -> FindingRow:
+@router.get("/{finding_uid}", response_model=FindingRowView)
+def get_finding(
+    finding_uid: str,
+    run_id: str | None = Query(default=None, description="Scopes the gene_symbol lookup; finding_uid itself is globally unique."),
+    con: duckdb.DuckDBPyConnection = Depends(get_db),
+) -> FindingRowView:
     row = queries.get_finding(con, finding_uid)
     if row is None:
         raise HTTPException(status_code=404, detail=f"finding_uid={finding_uid!r} not found")
-    return FindingRow(**row)
+    symbol = queries.gene_symbol_for(con, run_id, row["gene_id"]) if run_id else None
+    return FindingRowView(**row, gene_symbol=symbol)

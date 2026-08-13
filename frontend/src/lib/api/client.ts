@@ -28,6 +28,7 @@ import type {
   SourceScanReport,
   SourceScanResult,
   StubResponse,
+  SwitchNbMultiRow,
   SwitchResults,
   SwitchTrendGeneRow,
   UmapPoint,
@@ -48,6 +49,7 @@ import {
   mockRuns,
   mockSearch,
   mockSources,
+  mockSwitchNbMulti,
   mockSwitchResults,
   mockSwitchTrendGenes,
   mockUmap,
@@ -364,6 +366,14 @@ export const api = {
   getRunSwitchTrendGenes(runId: string, celltype: string, limit = 50): Promise<SwitchTrendGeneRow[]> {
     if (USE_MOCKS) return delay(mockSwitchTrendGenes(celltype))
     return fetchJson(`/runs/${runId}/switch/${encodeURIComponent(celltype)}/trend-genes`, { limit })
+  },
+
+  /** Per-PAS drill-down behind SwitchCelltypeResult.nb_multi's counts -- a
+   * different result grain than fisher (omnibus LRT, no canonical_cluster/
+   * direction), not queryable via getFindings. */
+  getRunSwitchNbMulti(runId: string, celltype: string, limit = 50): Promise<SwitchNbMultiRow[]> {
+    if (USE_MOCKS) return delay(mockSwitchNbMulti(celltype))
+    return fetchJson(`/runs/${runId}/switch/${encodeURIComponent(celltype)}/nb-multi`, { limit })
   },
 
   getFindings(params: FindingsParams): Promise<FindingsPage> {

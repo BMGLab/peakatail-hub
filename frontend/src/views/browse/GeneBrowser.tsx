@@ -10,6 +10,13 @@ import { BrowseTable } from './BrowseTable'
 const columnHelper = createColumnHelper<GeneListRow>()
 
 const columns = [
+  // "Gene" = the human-readable symbol (2026-08-14) -- ENSG ids alone are
+  // unreadable in a table. gene_id stays as its own, secondary column right
+  // after it (never dropped -- it's the stable key everything else joins on).
+  columnHelper.accessor('gene_symbol', {
+    header: 'Gene',
+    cell: (c) => c.getValue() ?? <span className="state-message">—</span>,
+  }),
   columnHelper.accessor('gene_id', {
     header: 'gene_id',
     cell: (c) => (
@@ -60,7 +67,7 @@ export function GeneBrowser() {
       kind: 'gene',
       data: {
         gene_id: row.gene_id,
-        gene_name: row.gene_id,
+        gene_name: row.gene_symbol ?? row.gene_id,
         chrom: row.chrom,
         start: row.start,
         end: row.end,
@@ -74,7 +81,7 @@ export function GeneBrowser() {
   return (
     <BrowseTable
       title="Genes"
-      placeholder="Search gene_id (symbol/ENSG)…"
+      placeholder="Search by gene symbol or ENSG id…"
       columns={columns}
       rows={rows}
       total={query.data?.total ?? 0}

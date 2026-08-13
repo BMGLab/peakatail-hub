@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom'
 import { useRunSwitch } from '@lib/api/hooks'
 import { useScopeStore } from '@state/useScopeStore'
+import { celltypeLabel } from '@lib/celltypeLabel'
 import { EmptyState, ErrorState, LoadingState } from '@views/shared/ViewStates'
 import type { SwitchCelltypeResult } from '@lib/contract/types'
 import './ResultsView.css'
@@ -23,7 +24,7 @@ function CelltypeCard({ celltype }: { celltype: SwitchCelltypeResult }) {
     <button type="button" className="results-view__card" onClick={() => navigate(`/results/${encodeURIComponent(celltype.celltype)}`)}>
       <div className="results-view__card-header">
         <span className="results-view__card-title" title={celltype.celltype}>
-          {celltype.celltype}
+          {celltypeLabel(celltype.celltype)}
         </span>
         {trend && (
           <span className={`badge ${trend.direction === 'decreasing' ? 'badge--warn' : 'badge--neutral'}`}>
@@ -57,7 +58,11 @@ function CelltypeCard({ celltype }: { celltype: SwitchCelltypeResult }) {
       <div className="results-view__stats">
         <div className="results-view__stat">
           <span className="num">{diffTotal.toLocaleString()}</span>
-          <span>switch-diff findings</span>
+          <span>fisher findings</span>
+        </div>
+        <div className="results-view__stat">
+          <span className="num">{celltype.nb_multi ? celltype.nb_multi.n_significant.toLocaleString() : '—'}</span>
+          <span>nb_multi hits (q&lt;0.05)</span>
         </div>
         <div className="results-view__stat">
           <span className="num">{lengthStrategies.length}</span>
@@ -98,9 +103,10 @@ export function ResultsView() {
       <header className="results-view__header">
         <h2>Cell Types</h2>
         <p className="results-view__description">
-          The B3_switch analysis for this run, per cell type: 3'UTR-length trend across disease stages (the
-          headline finding), switch-diff finding counts, and length-result availability. Click a cell type to see
-          its switching genes and open a real ema geneview for one.
+          The full B3_switch analysis for this run, per cell type: 3'UTR-length trend across disease stages (the
+          headline finding), switch-diff hit counts from BOTH strategies (fisher pairwise stage contrasts and
+          nb_multi's omnibus test across all stages), and length-result availability. Click a cell type for the
+          combined detail view, switching genes, and a real ema geneview.
         </p>
       </header>
 

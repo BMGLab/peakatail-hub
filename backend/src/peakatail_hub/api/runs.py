@@ -6,7 +6,7 @@ import duckdb
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from peakatail_hub.api.deps import get_db
-from peakatail_hub.schemas import QcFunnel, RunDataset, RunSummary, SwitchResults, SwitchTrendGene
+from peakatail_hub.schemas import QcFunnel, RunDataset, RunSummary, SwitchNbMultiRow, SwitchResults, SwitchTrendGene
 from peakatail_hub.store import queries
 
 router = APIRouter(tags=["runs"])
@@ -87,3 +87,22 @@ def run_switch_trend_genes(
     if queries.get_run(con, run_id) is None:
         raise HTTPException(status_code=404, detail=f"run_id={run_id!r} not indexed")
     return [SwitchTrendGene(**r) for r in queries.switch_trend_top_genes(con, run_id, celltype, limit)]
+
+
+@router.get("/runs/{run_id}/switch/{celltype}/nb-multi", response_model=list[SwitchNbMultiRow])
+def run_switch_nb_multi(
+    run_id: str,
+    celltype: str,
+    limit: int = Query(default=50, ge=1, le=500),
+    con: duckdb.DuckDBPyConnection = Depends(get_db),
+) -> list[SwitchNbMultiRow]:
+    """Per-PAS drill-down behind one celltype's nb_multi omnibus summary
+    (`SwitchResults.celltypes[].nb_multi`) -- top hits by qvalue. A
+    different result grain than fisher's pairwise contrasts (no
+    canonical_cluster/direction; an omnibus LRT across all stages at once),
+    not queryable via `/findings` -- see `queries.switch_summary`'s and
+    schema.py's `switch_nb_multi` table docstrings for why.
+    """
+    if queries.get_run(con, run_id) is None:
+        raise HTTPException(status_code=404, detail=f"run_id={run_id!r} not indexed")
+    return [SwitchNbMultiRow(**r) for r in queries.switch_nb_multi_top(con, run_id, celltype, limit)]

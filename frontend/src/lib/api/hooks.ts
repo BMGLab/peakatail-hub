@@ -34,6 +34,14 @@ export function useRunSwitchTrendGenes(runId: string | null, celltype: string | 
   })
 }
 
+export function useRunSwitchNbMulti(runId: string | null, celltype: string | null, limit = 50) {
+  return useQuery({
+    queryKey: ['runSwitchNbMulti', runId, celltype, limit],
+    queryFn: () => api.getRunSwitchNbMulti(runId!, celltype!, limit),
+    enabled: runId !== null && celltype !== null,
+  })
+}
+
 export function useFindings(params: FindingsParams) {
   return useQuery({
     queryKey: ['findings', params],
