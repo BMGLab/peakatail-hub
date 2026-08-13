@@ -35,8 +35,9 @@ class GeneviewWorkerError(Exception):
 def request_geneview(
     run_root_host: str,
     gene_id: str,
+    celltype: str | None = None,
     dataset_id: str | None = None,
-    cluster_key: str = "leiden",
+    cluster_key: str | None = None,
     force: bool = False,
 ) -> dict:
     """POST to the geneview worker's `/geneview` endpoint. `run_root_host`
@@ -44,21 +45,34 @@ def request_geneview(
     straight from the run's manifest) -- the worker runs on the host and has
     no notion of this container's `/runs` mount. Blocks for up to
     `config.geneview_worker_timeout_sec()` (default 180s -- generation
-    itself was measured at ~11s for one gene against one dataset on real
-    cohort data; the generous ceiling covers a cold-cache burst of several
-    concurrent first-opens).
+    itself was measured at ~11-15s for one gene against one dataset/celltype
+    on real cohort data; the generous ceiling covers a cold-cache burst of
+    several concurrent first-opens).
 
-    Returns the worker's parsed JSON response (`{status, gene_id,
-    dataset_id, cluster_key, cached, duration_sec, files: {...}}`) on
-    success. Raises `GeneviewWorkerError` on any failure -- connection
-    refused, timeout, or a structured `{status: "error", detail: ...}` body
-    from the worker itself (its own status code is forwarded).
+    `celltype`, when given, requests the CELLTYPE x STAGE render grain (the
+    switch-analysis headline: 3'UTR length across disease stages, within one
+    cell type) -- the worker uses it when this run has a matching
+    `B3_switch/combined/<celltype>.h5ad`, and transparently falls back to
+    the per-dataset path (using `dataset_id` if given, else its own
+    deterministic default) when it doesn't (grid/reannotate runs -- no
+    switch analysis). `cluster_key` defaults to whatever the worker itself
+    defaults to for the resolved path ('stage' for celltype, 'leiden' for
+    dataset) when omitted -- pass it explicitly only to override.
+
+    Returns the worker's parsed JSON response (`{status, gene_id, celltype,
+    dataset_id, cluster_key, cached, duration_sec, files: {...}}` -- exactly
+    one of `celltype`/`dataset_id` is non-null, reflecting which path was
+    actually used) on success. Raises `GeneviewWorkerError` on any failure
+    -- connection refused, timeout, or a structured `{status: "error",
+    detail: ...}` body from the worker itself (its own status code is
+    forwarded).
     """
     url = f"{config.geneview_worker_url().rstrip('/')}/geneview"
     body = json.dumps(
         {
             "run_root": run_root_host,
             "gene_id": gene_id,
+            "celltype": celltype,
             "dataset_id": dataset_id,
             "cluster_key": cluster_key,
             "force": force,

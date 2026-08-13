@@ -415,7 +415,13 @@ class GeneviewRender(BaseModel):
     gene_id: str
     gene_name: str = ""
     run_id: str
-    dataset_id: str
+    # Exactly one of these two is non-null (2026-08-14 CELLTYPE x STAGE fix):
+    # `celltype` when this run has real switch/celltype data for it
+    # (B3_switch/combined/<celltype>.h5ad, --cluster-key stage), `dataset_id`
+    # when it fell back to the original per-dataset render (grid/reannotate
+    # runs, or celltype not requested).
+    celltype: str | None = None
+    dataset_id: str | None = None
     cluster_key: str
     chrom: str | None = None
     start: int | None = None

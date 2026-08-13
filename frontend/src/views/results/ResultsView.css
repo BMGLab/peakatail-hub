@@ -85,6 +85,12 @@
   color: var(--text-h);
 }
 
+.results-view__stages {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
 .results-view__stats {
   display: flex;
   gap: 16px;

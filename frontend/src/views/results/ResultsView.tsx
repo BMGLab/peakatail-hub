@@ -33,15 +33,23 @@ function CelltypeCard({ celltype }: { celltype: SwitchCelltypeResult }) {
       </div>
 
       {trend ? (
-        <div className="results-view__trend">
-          <span>
-            slope <strong>{trend.slope?.toFixed(4) ?? '—'}</strong>
-          </span>
-          <span>
-            spearman <strong>{trend.spearman?.toFixed(2) ?? '—'}</strong>
-          </span>
-          <span>{trend.n_stages ?? '—'} stages</span>
-        </div>
+        <>
+          <div className="results-view__trend">
+            <span>
+              slope <strong>{trend.slope?.toFixed(4) ?? '—'}</strong>
+            </span>
+            <span>
+              spearman <strong>{trend.spearman?.toFixed(2) ?? '—'}</strong>
+            </span>
+          </div>
+          <div className="results-view__stages">
+            {Object.keys(trend.mean_by_stage).map((stage) => (
+              <span key={stage} className="badge badge--neutral">
+                {stage}
+              </span>
+            ))}
+          </div>
+        </>
       ) : (
         <p className="state-message">No length-trend-across-stages result for this celltype.</p>
       )}

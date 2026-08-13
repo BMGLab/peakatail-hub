@@ -40,8 +40,17 @@ brief -- documented here instead of just in a PR description):
   copies -- see `_move_into_cache`) the 5 files into the deterministic,
   gene_id/dataset_id-keyed cache path the hub backend expects, then removes
   the scratch dir. Callers never see ema's timestamp suffix.
-* Cache path: `<run_root>/B3_switch/geneview_cache/<gene_id>/<dataset_id>/`.
-  `<run_root>` is writable on the HOST filesystem even though the hub
+* CELLTYPE x STAGE (2026-08-14): the primary render grain is now per
+  (celltype, stage), not per-dataset leiden -- `_resolve_celltype_inputs`
+  uses `<run_root>/B3_switch/combined/<celltype>.h5ad` (obs['stage'] carries
+  the real disease-stage label) + the sibling `combined/pasbed.bed`, with
+  `--cluster-key stage --subtitle <celltype>`. Falls through to the
+  original per-dataset path (`_resolve_dataset_h5ad`, `--cluster-key
+  leiden`) when no `celltype` was requested or this run has no
+  `B3_switch/combined/` at all (grid/reannotate runs -- no switch analysis).
+* Cache path: `<run_root>/B3_switch/geneview_cache/<gene_id>/<key>/`, `key`
+  being whichever of celltype/dataset_id was actually used (see
+  `_cache_dir`). `<run_root>` is writable on the HOST filesystem even though the hub
   backend's own Docker mount of the same directory is `:ro` -- the container
   only ever needs to READ these files back (see the client module), not
   write them, so the read-only mount is not a problem once this worker (on
@@ -200,8 +209,42 @@ def _resolve_pasbed(run_root: Path, pasbed: str | None) -> Path:
     return path
 
 
-def _cache_dir(run_root: Path, gene_id: str, dataset_id: str) -> Path:
-    return run_root / "B3_switch" / "geneview_cache" / gene_id / dataset_id
+def _resolve_celltype_inputs(run_root: Path, celltype: str) -> tuple[Path, Path] | None:
+    """CELLTYPE x STAGE geneview inputs (2026-08-14, per stabilized cohort
+    layout): `<run_root>/B3_switch/combined/<celltype>.h5ad` -- a per-
+    celltype h5ad combining all datasets, with `obs['stage']` carrying the
+    real disease-stage label (verified on B1_cohort_full: 'Normal'/'Met'/
+    'StageI'/'IVprimary') -- plus a sibling `combined/pasbed.bed` shared by
+    every celltype in the run. This is the switch-context grain the
+    professor's headline finding (3'UTR shortening/lengthening ACROSS
+    STAGES, WITHIN a cell type) actually needs -- per-dataset leiden
+    clusters (the fallback below) have no cross-dataset stage semantics at
+    all.
+
+    Returns `None` (never raises) when this run has no `B3_switch/combined/`
+    at all (grid/reannotate runs -- no switch/celltype analysis) or no h5ad
+    for this specific `celltype` -- callers fall back to
+    `_resolve_dataset_h5ad` in that case, exactly as if celltype had never
+    been requested.
+    """
+    h5ad = run_root / "B3_switch" / "combined" / f"{celltype}.h5ad"
+    pasbed = run_root / "B3_switch" / "combined" / "pasbed.bed"
+    if h5ad.exists() and pasbed.exists():
+        return h5ad, pasbed
+    return None
+
+
+def _cache_dir(run_root: Path, gene_id: str, key: str) -> Path:
+    """`key` is whichever identity this render was actually generated
+    against -- a celltype (CELLTYPE x STAGE path) or a dataset_id (the
+    per-dataset fallback path, see `_resolve_celltype_inputs`/
+    `generate_geneview`). The two key-spaces don't collide in practice
+    (celltype names are long free-text stratum labels, dataset_ids are
+    GSM/sample ids) and are never mixed for the same gene_id within one run,
+    so a single flat namespace under the gene is enough -- no separate
+    `celltype/`/`dataset/` prefix needed.
+    """
+    return run_root / "B3_switch" / "geneview_cache" / gene_id / key
 
 
 def _cache_hit_files(cache_dir: Path, gene_id: str) -> dict[str, Path] | None:
@@ -214,7 +257,9 @@ def _cache_hit_files(cache_dir: Path, gene_id: str) -> dict[str, Path] | None:
     return files
 
 
-def _run_ema(cfg: Config, h5ad: Path, gene_id: str, pasbed: Path, gtf: Path | None, cluster_key: str) -> Path:
+def _run_ema(
+    cfg: Config, h5ad: Path, gene_id: str, pasbed: Path, gtf: Path | None, cluster_key: str, subtitle: str | None = None
+) -> Path:
     """Invoke `ema switch geneview` into a fresh scratch dir; returns the
     (timestamp-suffixed) `figures/` directory ema actually wrote into."""
     request_scratch = Path(tempfile.mkdtemp(prefix=f"gv_{gene_id}_", dir=cfg.scratch_root))
@@ -245,6 +290,11 @@ def _run_ema(cfg: Config, h5ad: Path, gene_id: str, pasbed: Path, gtf: Path | No
     ]
     if gtf is not None:
         cmd += ["--gtf", str(gtf)]
+    if subtitle:
+        # CELLTYPE x STAGE path: names the celltype in the figure header
+        # rather than repeating it on every track label -- see
+        # `_resolve_celltype_inputs`.
+        cmd += ["--subtitle", subtitle]
 
     import os
 
@@ -291,13 +341,17 @@ def _run_ema(cfg: Config, h5ad: Path, gene_id: str, pasbed: Path, gtf: Path | No
         shutil.rmtree(request_tmp, ignore_errors=True)
 
 
-def _move_into_cache(figures_dir: Path, gene_id: str, dataset_id: str, cache_dir: Path) -> dict[str, Path]:
+def _move_into_cache(figures_dir: Path, gene_id: str, key: str, source: str, cache_dir: Path) -> dict[str, Path]:
     """Move ema's per-gene output out of the (about-to-be-deleted) scratch
     `figures_dir` into the deterministic cache dir. Caller is responsible
     for cleaning up `figures_dir`'s scratch tree afterwards regardless of
     outcome (see `generate_geneview`) -- this function itself never deletes
     anything, so a raised error here always leaves the scratch output
     inspectable for debugging until the caller's `finally` runs.
+
+    `key`/`source` are purely for the error message -- `source` is
+    `"celltype"` or `"dataset"` (see `generate_geneview`), so the 404 below
+    names the right axis a caller might retry on.
     """
     stem = f"gene_{gene_id}"
     html_src = figures_dir / _EMA_OUTPUT_SUFFIXES["html"].format(stem=stem)
@@ -305,17 +359,14 @@ def _move_into_cache(figures_dir: Path, gene_id: str, dataset_id: str, cache_dir
         # A real, observed ema behavior (not a bug in this worker): ema
         # exits 0 with "Gene <id> has no PAS in the AnnData or pasbed —
         # skipping" and writes nothing for that gene when it isn't present
-        # in the CHOSEN dataset's clusters.h5ad var_names/pasbed -- distinct
-        # per-dataset PAS-calling means a gene_id present in one dataset's
-        # h5ad can genuinely be absent from another's. Surfaced as a clear
-        # 404 (not a generic 500 "file missing") so the hub backend/frontend
-        # can show "no PAS for this gene in this dataset" rather than a
-        # scary unexplained error.
+        # in the chosen h5ad/pasbed's var_names -- distinct per-dataset (or
+        # per-celltype-combined) PAS calling means a gene_id present in one
+        # can genuinely be absent from another. Surfaced as a clear 404 (not
+        # a generic 500 "file missing") so the hub backend/frontend can show
+        # "no PAS for this gene here" rather than a scary unexplained error.
         raise GeneviewWorkerError(
-            f"ema reported no renderable output for gene_id={gene_id!r} in dataset_id={dataset_id!r} -- "
-            "most likely this gene has no PAS in that dataset's clusters.h5ad/pasbed (PAS calling is "
-            "per-dataset, so this can differ from other datasets in the same run). Try a different "
-            "dataset_id.",
+            f"ema reported no renderable output for gene_id={gene_id!r} ({source}={key!r}) -- most likely this "
+            f"gene has no PAS in that {source}'s h5ad/pasbed. Try a different {source}.",
             status=404,
         )
 
@@ -350,39 +401,65 @@ def generate_geneview(cfg: Config, body: dict) -> dict:
     run_root = Path(run_root_raw)
     _check_allowed_root(run_root, cfg)
 
-    dataset_id, h5ad = _resolve_dataset_h5ad(run_root, body.get("dataset_id"))
-    pasbed = _resolve_pasbed(run_root, body.get("pasbed"))
-    cluster_key = body.get("cluster_key") or "leiden"
     gtf_raw = body.get("gtf")
     gtf = Path(gtf_raw) if gtf_raw else cfg.default_gtf
     force = bool(body.get("force", False))
 
-    cache_dir = _cache_dir(run_root, gene_id, dataset_id)
+    # CELLTYPE x STAGE path (primary, 2026-08-14): a `celltype` was
+    # requested AND this run actually has combined per-celltype input for
+    # it -- see `_resolve_celltype_inputs`'s docstring for why this is the
+    # grain the switch-analysis headline needs. Falls through to the
+    # per-dataset path (unchanged from the original single-dataset design)
+    # when celltype wasn't requested, or this run has no B3_switch/combined/
+    # at all (grid/reannotate runs), or no h5ad for this specific celltype.
+    celltype = body.get("celltype")
+    celltype_inputs = _resolve_celltype_inputs(run_root, celltype) if celltype else None
+    if celltype_inputs is not None:
+        h5ad, pasbed = celltype_inputs
+        key, source = celltype, "celltype"
+        cluster_key = body.get("cluster_key") or "stage"
+        subtitle = celltype
+        response_celltype, response_dataset_id = celltype, None
+    else:
+        dataset_id, h5ad = _resolve_dataset_h5ad(run_root, body.get("dataset_id"))
+        pasbed = _resolve_pasbed(run_root, body.get("pasbed"))
+        key, source = dataset_id, "dataset"
+        cluster_key = body.get("cluster_key") or "leiden"
+        subtitle = None
+        response_celltype, response_dataset_id = None, dataset_id
+
+    cache_dir = _cache_dir(run_root, gene_id, key)
     lock_key = str(cache_dir)
     lock = _lock_for(lock_key)
     with lock:
         if not force:
             hit = _cache_hit_files(cache_dir, gene_id)
             if hit is not None:
-                return _response(gene_id, dataset_id, cluster_key, run_root, hit, cached=True, duration_sec=0.0)
+                return _response(
+                    gene_id, response_celltype, response_dataset_id, cluster_key, run_root, hit,
+                    cached=True, duration_sec=0.0,
+                )
 
         t0 = time.monotonic()
-        figures_dir = _run_ema(cfg, h5ad, gene_id, pasbed, gtf, cluster_key)
+        figures_dir = _run_ema(cfg, h5ad, gene_id, pasbed, gtf, cluster_key, subtitle=subtitle)
         try:
-            files = _move_into_cache(figures_dir, gene_id, dataset_id, cache_dir)
+            files = _move_into_cache(figures_dir, gene_id, key, source, cache_dir)
         finally:
             # request_scratch (figures_dir's grandparent, "out_<ts>") -- always
             # removed, success or failure (a failure here -- e.g. gene has no
-            # PAS in this dataset -- must not leak scratch dirs any more than
-            # a success does).
+            # PAS here -- must not leak scratch dirs any more than a success
+            # does).
             shutil.rmtree(figures_dir.parent.parent, ignore_errors=True)
         duration = time.monotonic() - t0
-        return _response(gene_id, dataset_id, cluster_key, run_root, files, cached=False, duration_sec=duration)
+        return _response(
+            gene_id, response_celltype, response_dataset_id, cluster_key, run_root, files,
+            cached=False, duration_sec=duration,
+        )
 
 
 def _response(
-    gene_id: str, dataset_id: str, cluster_key: str, run_root: Path, files: dict[str, Path | None],
-    cached: bool, duration_sec: float,
+    gene_id: str, celltype: str | None, dataset_id: str | None, cluster_key: str, run_root: Path,
+    files: dict[str, Path | None], cached: bool, duration_sec: float,
 ) -> dict:
     def _rel(p: Path | None) -> str | None:
         return str(p.relative_to(run_root)) if p is not None else None
@@ -390,6 +467,11 @@ def _response(
     return {
         "status": "ok",
         "gene_id": gene_id,
+        # Exactly one of these two is non-null -- see generate_geneview's
+        # celltype-vs-dataset branch. Both present (one always null) so
+        # callers don't have to guess which key space a cache hit resolved
+        # to.
+        "celltype": celltype,
         "dataset_id": dataset_id,
         "cluster_key": cluster_key,
         "cached": cached,

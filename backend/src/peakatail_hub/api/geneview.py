@@ -74,26 +74,43 @@ def _candidate_dataset_ids(con: duckdb.DuckDBPyConnection, run_id: str, requeste
     return [d["dataset_id"] for d in ranked[:_MAX_DATASET_ATTEMPTS]]
 
 
-def _generate_or_502(con: duckdb.DuckDBPyConnection, run_row: dict, gene_id: str, dataset_id: str | None, force: bool) -> dict:
-    """Ask the geneview worker to (re)generate/serve the figure, trying more
-    than one dataset when the caller didn't pin one.
+def _generate_or_502(
+    con: duckdb.DuckDBPyConnection, run_row: dict, gene_id: str, celltype: str | None, dataset_id: str | None, force: bool
+) -> dict:
+    """Ask the geneview worker to (re)generate/serve the figure.
 
-    FINDING (2026-08-13/14, verified against real B1_cohort_full data): PAS
+    CELLTYPE x STAGE (2026-08-14, primary path): when `celltype` is given,
+    forward it straight through -- the worker resolves it against this
+    run's `B3_switch/combined/<celltype>.h5ad` (real disease-stage coverage
+    within that cell type, `--cluster-key stage`) and transparently falls
+    back to its own per-dataset default when this run has no switch/celltype
+    data at all (grid/reannotate runs). No multi-attempt retry here: the
+    frontend only ever offers a `celltype` sourced from this run's own real
+    `GET /runs/{id}/switch` results, so it's valid by construction, and a
+    single genuinely-no-PAS-in-this-celltype 404 has no other celltype to
+    usefully retry against (unlike the per-dataset case below, celltypes
+    aren't interchangeable "most likely" guesses).
+
+    PER-DATASET (fallback path, unchanged since 2026-08-13): when no
+    `celltype` was given, tries more than one dataset if the caller didn't
+    pin one either. FINDING (verified against real B1_cohort_full data): PAS
     calling is per-dataset, so a `gene_id` present in `annotatedpas.bed`
     (the run-level unified annotation) can genuinely have ZERO surviving PAS
     in a GIVEN dataset's `clusters.h5ad` -- ema exits 0 but renders nothing
-    for it ("Gene <id> has no PAS in the AnnData or pasbed — skipping"), and
-    the worker turns that into a 404 (see geneview_worker.py's
+    for it, and the worker turns that into a 404 (see geneview_worker.py's
     `_move_into_cache`). Picking the worker's naive "alphabetically first
-    dataset" default missed real differential genes outright in testing
-    (e.g. a fisher-diff hit only expressed in Met-stage datasets, tried
-    against a Normal-stage dataset first). Trying the
-    `_MAX_DATASET_ATTEMPTS` largest-by-cell-count datasets in turn (largest
-    first, as a cheap "most likely to have this gene" heuristic -- no
-    per-gene PAS presence is indexed to do better without a real query)
-    fixes that for the common case without the cost/latency of concatenating
-    all datasets into one render.
+    dataset" default missed real differential genes outright in testing.
+    Trying the `_MAX_DATASET_ATTEMPTS` largest-by-cell-count datasets in
+    turn (largest first, as a cheap "most likely to have this gene"
+    heuristic) fixes that for the common case without the cost/latency of
+    concatenating all datasets into one render.
     """
+    if celltype is not None:
+        try:
+            return request_geneview(run_row["root"], gene_id, celltype=celltype, dataset_id=dataset_id, force=force)
+        except GeneviewWorkerError as exc:
+            raise HTTPException(status_code=exc.status, detail=str(exc)) from exc
+
     last_error: GeneviewWorkerError | None = None
     for candidate in _candidate_dataset_ids(con, run_row["run_id"], dataset_id):
         try:
@@ -119,6 +136,7 @@ def _served_path(run_row: dict, relpath: str | None) -> Path | None:
 def geneview_html(
     gene_id: str,
     run_id: str | None = Query(default=None),
+    celltype: str | None = Query(default=None, description="CELLTYPE x STAGE render grain -- the primary path; see _generate_or_502."),
     dataset_id: str | None = Query(default=None),
     force: bool = Query(default=False, description="Bypass the on-disk cache and re-render even if a cached figure exists."),
     con: duckdb.DuckDBPyConnection = Depends(get_db),
@@ -129,7 +147,7 @@ def geneview_html(
     `<iframe>`, it is not meant to be parsed/re-rendered client-side.
     """
     run_row = _resolve_run(con, run_id)
-    result = _generate_or_502(con, run_row, gene_id, dataset_id, force)
+    result = _generate_or_502(con, run_row, gene_id, celltype, dataset_id, force)
     path = _served_path(run_row, result["files"]["html"])
     if path is None or not path.exists():
         raise HTTPException(
@@ -144,6 +162,7 @@ def geneview_html(
 def geneview_png(
     gene_id: str,
     run_id: str | None = Query(default=None),
+    celltype: str | None = Query(default=None),
     dataset_id: str | None = Query(default=None),
     force: bool = Query(default=False),
     con: duckdb.DuckDBPyConnection = Depends(get_db),
@@ -151,7 +170,7 @@ def geneview_png(
     """The real static matplotlib figure (same gene track + PAS-distance
     table as the plotly version, minus interactivity)."""
     run_row = _resolve_run(con, run_id)
-    result = _generate_or_502(con, run_row, gene_id, dataset_id, force)
+    result = _generate_or_502(con, run_row, gene_id, celltype, dataset_id, force)
     path = _served_path(run_row, result["files"]["png"])
     if path is None or not path.exists():
         raise HTTPException(
@@ -166,6 +185,7 @@ def geneview_png(
 def geneview_meta(
     gene_id: str,
     run_id: str | None = Query(default=None),
+    celltype: str | None = Query(default=None),
     dataset_id: str | None = Query(default=None),
     force: bool = Query(default=False),
     con: duckdb.DuckDBPyConnection = Depends(get_db),
@@ -176,7 +196,7 @@ def geneview_meta(
     embedded figure, rather than relying on the user reading it off the
     rendered image."""
     run_row = _resolve_run(con, run_id)
-    result = _generate_or_502(con, run_row, gene_id, dataset_id, force)
+    result = _generate_or_502(con, run_row, gene_id, celltype, dataset_id, force)
     files = result["files"]
 
     meta: dict = {}
@@ -202,6 +222,7 @@ def geneview_meta(
         gene_id=gene_id,
         gene_name=meta.get("gene_name", ""),
         run_id=run_row["run_id"],
+        celltype=result["celltype"],
         dataset_id=result["dataset_id"],
         cluster_key=result["cluster_key"],
         chrom=meta.get("chrom"),
