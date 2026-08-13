@@ -112,9 +112,41 @@ class FindingRowView(FindingRow):
     mirroring the same reasoning that keeps chrom/start/end off it) --
     this is a genuinely hub-specific display shape, same precedent as
     `GeneSummary.gene_name`.
+
+    findings_long is now TWO grains (2026-08-14, "make Findings show ALL
+    strategies" -- see index/indexer.py's `_switch_nb_multi_findings_df`/
+    `_switch_length_findings_df`), and this view relaxes exactly the fields
+    that differ between them, WITHOUT touching the base `FindingRow`
+    contract (still strict, still used as-is for genuine per-PAS diff rows
+    in GeneviewData.findings / PasProvenance.findings -- those call sites
+    only ever see fisher/nb_multi rows, which satisfy it):
+    * per-PAS diff findings (fisher/nb_multi): real `pas_uid`, real
+      `qvalue`/`pvalue`; `slope`/`spearman` are None (no such concept).
+    * per-gene length pseudo-findings (classic/proportion/shannon, folded
+      in from `switch_trend_gene`): NO `pas_uid` (no PAS at this grain --
+      `str | None` here, unlike the base contract's required `pas_uid: str`)
+      and NO `qvalue`/`pvalue`/`n_cells` (no PAS-level test exists to
+      report them from); `slope`/`spearman` carry the real numbers instead.
+    * `strategy` is widened to plain `str` (not the base contract's strict
+      `Strategy` enum, which is deliberately scoped to diff strategies
+      only, per its own docstring) so length-strategy string values
+      ('classic'/'proportion'/'shannon') validate here too -- this is a
+      hub-display-layer union of two dimensions the contract intentionally
+      keeps as separate enums (`Strategy` vs `LengthStrategy`).
     """
 
     gene_symbol: str | None = None
+    pas_uid: str | None = None
+    strategy: str
+    qvalue: float | None = None
+    pvalue: float | None = None
+    n_cells: int | None = None
+    # 2026-08-14: real numbers for length-strategy pseudo-findings
+    # (classic/proportion/shannon), None for per-PAS diff findings
+    # (fisher/nb_multi) -- see findings_long's own `slope`/`spearman`
+    # column docstring in store/schema.py.
+    slope: float | None = None
+    spearman: float | None = None
 
 
 class FindingsPage(BaseModel):

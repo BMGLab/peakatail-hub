@@ -53,12 +53,25 @@ export function ResultsCelltypeView() {
   const [diffStrategy, setDiffStrategy] = useState<DiffStrategy>('fisher')
 
   const switchQuery = useRunSwitch(runId)
-  const findingsQuery = useFindings({ run_id: runId ?? undefined, celltype: celltype ?? undefined, limit: 500 })
+  // strategy: 'fisher' (2026-08-14, REQUIRED now) -- findings_long stopped
+  // being fisher-only once nb_multi + classic/proportion/shannon were
+  // folded in too (see backend index/indexer.py's
+  // _switch_nb_multi_findings_df/_switch_length_findings_df); this panel
+  // is specifically "fisher pairwise contrasts" and unconditionally calls
+  // f.qvalue.toFixed()/f.delta_proportion.toFixed() below, both of which
+  // are null for the other strategies now -- omitting this filter would
+  // both mix strategies into one table AND crash on the first null row.
+  const findingsQuery = useFindings({ run_id: runId ?? undefined, celltype: celltype ?? undefined, strategy: 'fisher', limit: 500 })
   const nbMultiQuery = useRunSwitchNbMulti(runId, celltype ?? null, 25)
 
   const sortedFindings = useMemo(() => {
     const rows = findingsQuery.data?.rows ?? []
-    return [...rows].sort((a, b) => a.qvalue - b.qvalue).slice(0, 100)
+    // qvalue is null-typed on FindingRow now (length-strategy rows have no
+    // PAS-level test), but this query is scoped to strategy='fisher' above,
+    // so every row here always has a real one in practice -- `?? Infinity`
+    // is just a defensive fallback (pushes a theoretical null to the end),
+    // not something expected to ever fire.
+    return [...rows].sort((a, b) => (a.qvalue ?? Infinity) - (b.qvalue ?? Infinity)).slice(0, 100)
   }, [findingsQuery.data])
 
   if (!celltype) {
@@ -244,8 +257,8 @@ export function ResultsCelltypeView() {
                       <td className="mono">{f.gene_id}</td>
                       <td>{f.arm}</td>
                       <td>{f.direction}</td>
-                      <td>{f.qvalue.toFixed(4)}</td>
-                      <td>{f.delta_proportion.toFixed(3)}</td>
+                      <td>{f.qvalue?.toFixed(4) ?? '—'}</td>
+                      <td>{f.delta_proportion?.toFixed(3) ?? '—'}</td>
                     </tr>
                   ))}
                 </tbody>

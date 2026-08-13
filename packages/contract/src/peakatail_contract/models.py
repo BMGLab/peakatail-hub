@@ -390,11 +390,20 @@ class FindingRow(BaseModel):
     )
     qvalue: float
     pvalue: float
-    delta_proportion: float = Field(description="NOT 'delta_p' -- see research_stats_validity_bugs: this is a proportion delta, not a p-value delta.")
+    # delta_proportion (2026-08-14, was required): nb_multi's omnibus test
+    # (a likelihood-ratio test across ALL stages at once, no cluster1/
+    # cluster2 pairwise contrast) reports no proportion delta at all --
+    # there is no pair of clusters to take a delta between. None for those
+    # rows; same "may be None for X-strategy rows" precedent as
+    # log2fc/odds_ratio just below, not a new kind of gap.
+    delta_proportion: float | None = Field(default=None, description="NOT 'delta_p' -- see research_stats_validity_bugs: this is a proportion delta, not a p-value delta. None for nb_multi (no pairwise contrast to delta).")
     log2fc: float | None = Field(default=None, description="NB-strategy log2 fold change; may be None for fisher rows that only report odds_ratio.")
     odds_ratio: float | None = Field(default=None, description="Fisher-strategy only; kept for parity with the real per-comparison TSV column.")
     n_cells: int = Field(description="Total cells tested across canonical_cluster (+ comparison_cluster if pairwise).")
-    n_reads: int = Field(description="Total reads at this PAS across the cells tested.")
+    # n_reads (2026-08-14, was required): nb_multi_omnibus.tsv has no reads
+    # column at all (unlike fisher's n_reads_pas_cluster1/2) -- None for
+    # nb_multi rows, same rationale as delta_proportion above.
+    n_reads: int | None = Field(default=None, description="Total reads at this PAS across the cells tested. None for nb_multi (not reported by the omnibus test).")
     n_cells_subject: int | None = Field(default=None, description="Cells in canonical_cluster specifically (parity with n_cells_cluster1/2).")
     n_cells_comparison: int | None = Field(default=None, description="Cells in comparison_cluster specifically, if pairwise.")
     n_reads_subject: int | None = Field(default=None, description="Reads at this PAS within canonical_cluster specifically.")

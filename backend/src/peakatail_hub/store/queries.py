@@ -100,12 +100,16 @@ def get_run(con: duckdb.DuckDBPyConnection, run_id: str) -> dict[str, Any] | Non
 # findings
 # --------------------------------------------------------------------------
 
+# slope/spearman (2026-08-14): only populated for length-strategy pseudo-
+# findings (classic/proportion/shannon, see index/indexer.py::
+# _switch_length_findings_df) -- NULL for real per-PAS diff findings
+# (fisher/nb_multi). See schemas.py FindingRowView's docstring.
 FINDING_COLUMNS = [
     "finding_uid", "pas_uid", "gene_id", "canonical_cluster", "comparison_cluster",
     "celltype", "strategy", "arm", "direction", "utr_class",
     "qvalue", "pvalue", "delta_proportion", "log2fc", "odds_ratio",
     "n_cells", "n_reads", "n_cells_subject", "n_cells_comparison",
-    "n_reads_subject", "n_reads_comparison",
+    "n_reads_subject", "n_reads_comparison", "slope", "spearman",
 ]
 
 

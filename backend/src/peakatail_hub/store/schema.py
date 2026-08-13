@@ -114,6 +114,17 @@ CREATE TABLE IF NOT EXISTS cell_ledger (
     cluster      VARCHAR
 );
 
+-- `slope`/`spearman` (2026-08-14, appended last -- see the strategy-column
+-- comment on switch_trend_summary/switch_trend_gene above for why append-
+-- only ordering matters for `_insert_df`'s positional INSERT): populated
+-- ONLY for the length-strategy pseudo-findings (classic/proportion/shannon,
+-- folded in from switch_trend_gene -- see
+-- index/indexer.py::_switch_length_findings_df), NULL for real per-PAS
+-- diff findings (fisher/nb_multi), which have no slope/spearman concept.
+-- `qvalue`/`pvalue`/`n_reads`/`delta_proportion` are, symmetrically, always
+-- NULL for length rows (no PAS-level test exists to report them from) --
+-- see FindingRowView's docstring in schemas.py for the full "findings_long
+-- is now two grains" picture.
 CREATE TABLE IF NOT EXISTS findings_long (
     run_id               VARCHAR,
     finding_uid          VARCHAR,
@@ -136,7 +147,9 @@ CREATE TABLE IF NOT EXISTS findings_long (
     n_cells_subject      BIGINT,
     n_cells_comparison   BIGINT,
     n_reads_subject      BIGINT,
-    n_reads_comparison   BIGINT
+    n_reads_comparison   BIGINT,
+    slope                DOUBLE,
+    spearman             DOUBLE
 );
 
 CREATE TABLE IF NOT EXISTS length_long (
@@ -277,6 +290,8 @@ ALTER TABLE runs ADD COLUMN IF NOT EXISTS atlas_snap_available BOOLEAN;
 ALTER TABLE pas_ledger ADD COLUMN IF NOT EXISTS gene_symbol VARCHAR;
 ALTER TABLE switch_trend_summary ADD COLUMN IF NOT EXISTS strategy VARCHAR;
 ALTER TABLE switch_trend_gene ADD COLUMN IF NOT EXISTS strategy VARCHAR;
+ALTER TABLE findings_long ADD COLUMN IF NOT EXISTS slope DOUBLE;
+ALTER TABLE findings_long ADD COLUMN IF NOT EXISTS spearman DOUBLE;
 """
 
 # `idx_switch_trend_gene_strategy` MUST be created here, not in the main DDL

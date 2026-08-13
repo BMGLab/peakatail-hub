@@ -90,13 +90,25 @@ const columns = [
   }),
   columnHelper.accessor('direction', { header: 'direction', meta: { width: 110 } }),
   columnHelper.accessor('utr_class', { header: 'utr_class', meta: { width: 120 }, cell: (c) => c.getValue() ?? '—' }),
-  columnHelper.accessor('qvalue', { header: 'q', meta: { width: 80, numeric: true }, cell: (c) => c.getValue().toFixed(4) }),
+  // 2026-08-14: qvalue/delta_proportion/n_reads are all null-typed now --
+  // real for per-PAS diff findings (fisher/nb_multi), always null for
+  // per-gene length pseudo-findings (classic/proportion/shannon), which
+  // have no PAS-level test to report them from (see slope/spearman below,
+  // populated for exactly the opposite subset). '—' for the null side of
+  // that split, not a crash (this table mixes both grains -- unlike
+  // ResultsCelltypeView's fisher-only panel, which pre-filters).
+  columnHelper.accessor('qvalue', { header: 'q', meta: { width: 80, numeric: true }, cell: (c) => c.getValue()?.toFixed(4) ?? '—' }),
   columnHelper.accessor('delta_proportion', {
     header: 'Δ proportion',
     meta: { width: 120, numeric: true },
-    cell: (c) => c.getValue().toFixed(3),
+    cell: (c) => c.getValue()?.toFixed(3) ?? '—',
   }),
-  columnHelper.accessor('n_reads', { header: 'n_reads', meta: { width: 90, numeric: true } }),
+  columnHelper.accessor('n_reads', { header: 'n_reads', meta: { width: 90, numeric: true }, cell: (c) => c.getValue() ?? '—' }),
+  // slope/spearman (2026-08-14): the length-strategy (classic/proportion/
+  // shannon) counterpart to qvalue/delta_proportion above -- real numbers
+  // for length pseudo-findings, null (rendered '—') for fisher/nb_multi.
+  columnHelper.accessor('slope', { header: 'slope', meta: { width: 90, numeric: true }, cell: (c) => c.getValue()?.toFixed(4) ?? '—' }),
+  columnHelper.accessor('spearman', { header: 'spearman', meta: { width: 90, numeric: true }, cell: (c) => c.getValue()?.toFixed(2) ?? '—' }),
   columnHelper.display({
     id: 'caveats',
     header: 'caveats',
@@ -308,6 +320,19 @@ export function FindingsView() {
       </aside>
 
       <section className="findings-view__table-wrap">
+        {/* science-reports finding (2026-08-14): proportion's length trend
+            is an engine defect (uniform-padded, ~98% synthetic, constant
+            across every stage), not a real "no shortening" result -- same
+            caveat as the length-strategy selector on the cell-type view.
+            Surfaced here too since Findings' strategy facet is a second,
+            independent way to land on proportion rows. */}
+        {filters.strategy === 'proportion' && (
+          <div className="findings-view__proportion-warning" role="alert">
+            ⚠ Invalid — proportion's length trend is a known engine defect (uncovered cells are synthetically padded
+            with 1/n_PAS), not a real biological result. slope/spearman below are the raw (broken) numbers, shown for
+            transparency, not as a finding to trust.
+          </div>
+        )}
         <div className="findings-view__toolbar">
           <span>{findingsQuery.data ? `${findingsQuery.data.total} findings (showing ${rows.length})` : ''}</span>
           <button type="button" disabled={selectedIds.size === 0} onClick={pinSelected}>

@@ -34,7 +34,7 @@ export function caveatFlagsFor(row: FindingRow): CaveatFlag[] {
 
   // STUB: real rule needs atlas snap_distance_bp from the PAS ledger (joined
   // via pas_uid), not available on FindingRow yet.
-  if (row.strategy === 'fisher' && row.qvalue < 0.01) {
+  if (row.strategy === 'fisher' && row.qvalue !== null && row.qvalue < 0.01) {
     flags.push({
       key: 'atlas-circularity',
       label: '⚠ atlas-circularity',

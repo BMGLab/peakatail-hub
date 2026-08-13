@@ -460,6 +460,21 @@ _FINDINGS_TABLE_COLUMNS = [
     "n_reads_subject", "n_reads_comparison",
 ]
 
+#: The FULL findings_long insert shape (2026-08-14) -- `_FINDINGS_TABLE_COLUMNS`
+#: above stays exactly the 21-column real-per-PAS-diff-file shape (fisher's
+#: switch_diff_long.parquet genuinely has all of and only those columns --
+#: `_switch_diff_findings_df` validates against it and would wrongly skip
+#: every celltype if `slope`/`spearman` were added there). This wider list
+#: is what `index_run` reindexes the assembled `findings_df` against right
+#: before `_insert_df`, since `_insert_df`'s `INSERT INTO t SELECT * FROM df`
+#: is POSITIONAL -- every source frame (fisher, nb_multi, length) can supply
+#: a different subset/order of columns; `.reindex(columns=...)` here is what
+#: guarantees the final frame matches findings_long's real column order
+#: regardless (missing columns become NaN, not a silent column-shift bug --
+#: see schema.py's `idx_switch_trend_gene_strategy` post-mortem comment for
+#: exactly the failure mode this reindex exists to prevent).
+_FINDINGS_INSERT_COLUMNS = ["run_id", *_FINDINGS_TABLE_COLUMNS, "slope", "spearman"]
+
 
 def _switch_diff_findings_df(run_id: str, run_dir: Path) -> pd.DataFrame:
     """Real-run switch-diff results source:
@@ -582,6 +597,88 @@ def _switch_nb_multi_df(run_id: str, run_dir: Path, pas_gene_lookup: pd.Series) 
     return pd.concat(frames, ignore_index=True)
 
 
+def _switch_nb_multi_findings_df(nb_multi_df: pd.DataFrame, pas_uid_lookup: pd.Series) -> pd.DataFrame:
+    """Fold nb_multi's omnibus rows into findings_long-shaped rows too
+    (2026-08-14) -- previously ONLY fisher was ever folded into
+    findings_long (see `_switch_diff_findings_df`), which is exactly why
+    the Findings tab's strategy facet only ever showed fisher even though
+    nb_multi was fully computed and already browsable one level down, via
+    `/runs/{id}/switch/{celltype}/nb-multi`. Takes the SAME `nb_multi_df`
+    `_switch_nb_multi_df` already parsed (run_id/celltype/pas_id/gene_id/
+    pvalue/qvalue/test_stat/df/dispersion/n_cells) -- no second file read.
+
+    nb_multi has no cluster1/cluster2 pairwise split (one omnibus LRT per
+    PAS x celltype across ALL stages at once), so several FindingRow fields
+    have no natural value here, each handled explicitly rather than
+    fabricated:
+    * `canonical_cluster` uses the sentinel `'ALL_STAGES'` (never a made-up
+      pairwise cluster label) -- `comparison_cluster` stays None, which the
+      contract's own FindingRow docstring already anticipated ("None for
+      nb_multi omnibus rows, which have no single partner").
+    * `direction` is always `'undetermined'` -- an omnibus test has no
+      shorten/lengthen polarity to report, and D8 requires a real enum
+      value, never a blank.
+    * `delta_proportion`/`n_reads` are None (2026-08-14 contract change --
+      `peakatail_contract.FindingRow` widened both to Optional specifically
+      for this: the omnibus test reports neither).
+
+    `pas_uid` is resolved via `pas_uid_lookup` (a `pas_id -> pas_uid`
+    Series, same run-level unified pas_id space and same caller-built-it
+    pattern as `pas_gene_lookup` in `index_run`). A lookup miss leaves
+    `pas_uid` None -- naturally excludes that row from PAS-scoped queries
+    (geneview overlay, `/pas/{id}` detail, both filter `pas_uid IN (...)`)
+    without a crash; it stays fully visible in the general Findings browse.
+
+    Returns an empty DataFrame (never raises) when `nb_multi_df` is empty.
+    """
+    if nb_multi_df.empty:
+        return pd.DataFrame()
+    from peakatail_contract import ids
+
+    df = nb_multi_df.copy()
+    df["pas_uid"] = df["pas_id"].map(pas_uid_lookup)
+    # `ids.finding_uid`'s separator guard rejects ':' in `arm` (it's part of
+    # the joined ID string itself) -- 'switch_diff_nb_multi' (underscore) is
+    # what's actually minted with; the STORED `arm` column below still uses
+    # 'switch_diff:nb_multi' (colon), matching fisher's own
+    # 'switch_diff:fisher' convention for display/facet consistency -- the
+    # engine's own switch_diff_long.parquet was never round-tripped through
+    # this validator, so its colon-containing arm values predate this guard.
+    df["finding_uid"] = [
+        ids.finding_uid(celltype, pas_id, "nb_multi", "switch_diff_nb_multi", resolved_pas_uid or "")
+        for celltype, pas_id, resolved_pas_uid in zip(df["celltype"], df["pas_id"], df["pas_uid"], strict=True)
+    ]
+    n = len(df)
+    return pd.DataFrame(
+        {
+            "run_id": df["run_id"],
+            "finding_uid": df["finding_uid"],
+            "pas_uid": df["pas_uid"],
+            "gene_id": df["gene_id"],
+            "canonical_cluster": ["ALL_STAGES"] * n,
+            "comparison_cluster": [None] * n,
+            "celltype": df["celltype"],
+            "strategy": ["nb_multi"] * n,
+            "arm": ["switch_diff:nb_multi"] * n,
+            "direction": ["undetermined"] * n,
+            "utr_class": [None] * n,
+            "qvalue": df["qvalue"],
+            "pvalue": df["pvalue"],
+            "delta_proportion": [None] * n,
+            "log2fc": [None] * n,
+            "odds_ratio": [None] * n,
+            "n_cells": df["n_cells"],
+            "n_reads": [None] * n,
+            "n_cells_subject": [None] * n,
+            "n_cells_comparison": [None] * n,
+            "n_reads_subject": [None] * n,
+            "n_reads_comparison": [None] * n,
+            "slope": [None] * n,
+            "spearman": [None] * n,
+        }
+    )
+
+
 _SUMMARY_COLUMNS = ["run_id", "celltype", "n_stages", "slope", "spearman", "direction", "value_col", "mean_by_stage", "strategy"]
 _GENE_COLUMNS = ["run_id", "celltype", "gene_id", "n_stages", "slope", "spearman", "direction", "strategy"]
 
@@ -633,6 +730,14 @@ def _read_one_trend(
     return summary_row, gene_df
 
 
+#: Strategy subdirs `_switch_trend_dfs` will actually read under
+#: `trend/<celltype>/` (classic is handled separately, via the legacy flat
+#: layout -- see below). Anything else found there (e.g. a scratch/backup
+#: dir from out-of-band engine-writer work happening directly on the
+#: analysis server) is skipped, not ingested as a fabricated strategy.
+_KNOWN_LENGTH_TREND_SUBDIRS = {"proportion", "shannon"}
+
+
 def _switch_trend_dfs(run_id: str, run_dir: Path) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Real-run 3'UTR-length-trend-across-stages source (the professor
     headline finding), now covering all three `B3_switch/length` strategies
@@ -667,10 +772,15 @@ def _switch_trend_dfs(run_id: str, run_dir: Path) -> tuple[pd.DataFrame, pd.Data
             summary_rows.append(summary_row)
         if gene_df is not None:
             gene_frames.append(gene_df)
-        # proportion/shannon (and any future strategy): one subdir each,
-        # named after the strategy -- anything that isn't itself a further
-        # nested trend result is just skipped (nothing else lives here).
-        for strategy_dir in sorted(p for p in celltype_dir.iterdir() if p.is_dir()):
+        # proportion/shannon: one subdir each, named after the strategy.
+        # Restricted to the known set (2026-08-14 FINDING: a scratch/backup
+        # dir -- e.g. 'proportion_PRE_FIX_bak', left behind by out-of-band
+        # engine-writer fix work happening directly on the analysis server
+        # -- would otherwise be silently ingested as if it were a real
+        # fourth strategy, since this used to iterate EVERY subdirectory
+        # unconditionally. Anything not in `_KNOWN_LENGTH_TREND_SUBDIRS` is
+        # skipped, not fabricated into a findings_long strategy value.
+        for strategy_dir in sorted(p for p in celltype_dir.iterdir() if p.is_dir() and p.name in _KNOWN_LENGTH_TREND_SUBDIRS):
             summary_row, gene_df = _read_one_trend(run_id, celltype, strategy_dir.name, strategy_dir)
             if summary_row is not None:
                 summary_rows.append(summary_row)
@@ -679,6 +789,106 @@ def _switch_trend_dfs(run_id: str, run_dir: Path) -> tuple[pd.DataFrame, pd.Data
     summary_df = pd.DataFrame(summary_rows, columns=_SUMMARY_COLUMNS) if summary_rows else pd.DataFrame(columns=_SUMMARY_COLUMNS)
     gene_df = pd.concat(gene_frames, ignore_index=True) if gene_frames else pd.DataFrame(columns=_GENE_COLUMNS)
     return summary_df, gene_df
+
+
+# `ema switch trend`'s own direction vocabulary (increasing/decreasing/flat,
+# see length_trend_by_gene.tsv) mapped to FindingRow's Direction enum
+# (lengthen/shorten/flat/undetermined) -- anything not in this map (missing,
+# or a future engine value) falls back to 'undetermined', never left blank.
+_LENGTH_DIRECTION_MAP = {"decreasing": "shorten", "increasing": "lengthen", "flat": "flat"}
+
+
+def _switch_length_findings_df(switch_trend_gene_df: pd.DataFrame) -> pd.DataFrame:
+    """Fold the length-strategy per-gene trend rows (classic/proportion/
+    shannon, already parsed by `_switch_trend_dfs` into `switch_trend_gene_df`
+    -- no second file read) into findings_long-shaped pseudo-findings too
+    (2026-08-14) -- so classic/proportion/shannon become selectable
+    `strategy` values in the Findings browse, not only via the separate
+    per-celltype browsable table (ResultsCelltypeView's LengthTrendTable).
+    Same "surface all strategies, let the user select" principle as
+    `_switch_nb_multi_findings_df`, and the reason the Findings tab's
+    strategy facet used to show fisher only even though nb_multi AND all
+    three length strategies were fully computed and browsable one level
+    down.
+
+    A genuinely DIFFERENT grain than a per-PAS diff finding -- one row per
+    (gene, celltype, strategy), no PAS/qvalue/pvalue concept at all
+    (`ema switch trend` reports a per-gene slope/Spearman-across-stages,
+    not a per-PAS significance test). Handled explicitly, not fabricated:
+    * `pas_uid` stays None -- there is no PAS. Naturally excludes these
+      rows from every PAS-scoped query (geneview overlay, `/pas/{id}`
+      detail both filter `pas_uid IN (...)`); they stay fully visible in
+      the general Findings browse and gene-scoped queries.
+    * `qvalue`/`pvalue`/`n_reads`/`delta_proportion`/`n_cells` are all None
+      -- no such measurement exists for a slope-across-stages call.
+      `slope`/`spearman` (2026-08-14 new findings_long columns) carry the
+      real numbers instead -- a differently-shaped row, not a blank one.
+    * `canonical_cluster` uses the sentinel `'ALL_STAGES'` (same rationale
+      as nb_multi -- spans every stage, not one pairwise pair).
+    * `direction` is mapped via `_LENGTH_DIRECTION_MAP` above, never left
+      blank (D8).
+    * `arm` is `switch_length:<strategy>`, parallel to nb_multi's
+      `switch_diff:nb_multi` -- lets a caller distinguish diff vs length
+      pseudo-findings by arm prefix without checking `strategy`.
+    * `strategy='proportion'` rows ARE included (science-reports: the
+      engine pads uncovered pairs with 1/n_PAS, so the trend is a
+      near-constant, not real biology -- see ResultsCelltypeView's
+      LENGTH_STRATEGIES docstring) -- the frontend flags them invalid at
+      display time, same as the length-strategy selector; the indexer's
+      job is completeness, not deciding what's trustworthy.
+
+    finding_uid uses an empty `pas_uid_value` component (no PAS exists to
+    fold in) -- (celltype, gene_id, strategy) is already unique at this
+    grain (one trend row per gene per celltype per strategy).
+
+    Returns an empty DataFrame (never raises) when `switch_trend_gene_df`
+    is empty.
+    """
+    if switch_trend_gene_df.empty:
+        return pd.DataFrame()
+    from peakatail_contract import ids
+
+    df = switch_trend_gene_df.copy()
+    mapped_direction = df["direction"].map(_LENGTH_DIRECTION_MAP).fillna("undetermined")
+    # `ids.finding_uid`'s separator guard rejects ':' in `arm` -- mint with
+    # 'switch_length_<strategy>' (underscore); the STORED `arm` column below
+    # still uses 'switch_length:<strategy>' (colon), matching nb_multi's/
+    # fisher's own 'switch_diff:...' display convention. See
+    # _switch_nb_multi_findings_df's identical comment for why minting and
+    # storage are allowed to differ here.
+    df["finding_uid"] = [
+        ids.finding_uid(celltype, gene_id, strategy, f"switch_length_{strategy}", "")
+        for celltype, gene_id, strategy in zip(df["celltype"], df["gene_id"], df["strategy"], strict=True)
+    ]
+    n = len(df)
+    return pd.DataFrame(
+        {
+            "run_id": df["run_id"],
+            "finding_uid": df["finding_uid"],
+            "pas_uid": [None] * n,
+            "gene_id": df["gene_id"],
+            "canonical_cluster": ["ALL_STAGES"] * n,
+            "comparison_cluster": [None] * n,
+            "celltype": df["celltype"],
+            "strategy": df["strategy"],
+            "arm": "switch_length:" + df["strategy"].astype(str),
+            "direction": mapped_direction,
+            "utr_class": [None] * n,
+            "qvalue": [None] * n,
+            "pvalue": [None] * n,
+            "delta_proportion": [None] * n,
+            "log2fc": [None] * n,
+            "odds_ratio": [None] * n,
+            "n_cells": [None] * n,
+            "n_reads": [None] * n,
+            "n_cells_subject": [None] * n,
+            "n_cells_comparison": [None] * n,
+            "n_reads_subject": [None] * n,
+            "n_reads_comparison": [None] * n,
+            "slope": df["slope"],
+            "spearman": df["spearman"],
+        }
+    )
 
 
 def _switch_availability_df(run_id: str, run_dir: Path) -> pd.DataFrame:
@@ -705,7 +915,13 @@ def _switch_availability_df(run_id: str, run_dir: Path) -> pd.DataFrame:
     _length_primary = {"classic": "pdui_classic.tsv", "proportion": "proportion.tsv", "shannon": "entropy_shannon.tsv"}
     if length_root.is_dir():
         for celltype_dir in sorted(p for p in length_root.iterdir() if p.is_dir()):
-            for strategy_dir in sorted(p for p in celltype_dir.iterdir() if p.is_dir()):
+            # Restricted to the known 3 strategies (2026-08-14, same finding
+            # as `_KNOWN_LENGTH_TREND_SUBDIRS` above) -- a scratch/backup
+            # dir here would otherwise show up as a fabricated "4th
+            # strategy" file-size badge in the UI.
+            for strategy_dir in sorted(
+                p for p in celltype_dir.iterdir() if p.is_dir() and p.name in _length_primary
+            ):
                 fname = _length_primary.get(strategy_dir.name)
                 fpath = (strategy_dir / fname) if fname else None
                 if fpath is None or not fpath.exists():
@@ -1014,16 +1230,39 @@ def index_run(con: duckdb.DuckDBPyConnection, run_dir: Path, source_id: str | No
         umap_df = pd.DataFrame()
     switch_trend_summary_df, switch_trend_gene_df = _switch_trend_dfs(run_id, run_dir)
     switch_availability_df = _switch_availability_df(run_id, run_dir)
-    # pas_id -> gene_id lookup for _switch_nb_multi_df's join, built from
-    # THIS run's own just-computed pas_df (same run-level unified pas_id
-    # space as annotatedpas.bed/orig_pas_key -- see _pas_annot_df) --
-    # skipped (empty lookup, gene_id stays null) when pas_df is empty.
-    pas_gene_lookup = (
-        pas_df.drop_duplicates(subset="orig_pas_key", keep="first").set_index("orig_pas_key")["gene_id"]
-        if not pas_df.empty
-        else pd.Series(dtype=str)
-    )
+    # pas_id -> gene_id / pas_id -> pas_uid lookups for _switch_nb_multi_df's
+    # and _switch_nb_multi_findings_df's joins, built from THIS run's own
+    # just-computed pas_df (same run-level unified pas_id space as
+    # annotatedpas.bed/orig_pas_key -- see _pas_annot_df) -- skipped (empty
+    # lookups, gene_id/pas_uid stay null) when pas_df is empty.
+    _pas_df_deduped = pas_df.drop_duplicates(subset="orig_pas_key", keep="first") if not pas_df.empty else pas_df
+    pas_gene_lookup = _pas_df_deduped.set_index("orig_pas_key")["gene_id"] if not pas_df.empty else pd.Series(dtype=str)
+    pas_uid_lookup = _pas_df_deduped.set_index("orig_pas_key")["pas_uid"] if not pas_df.empty else pd.Series(dtype=str)
     switch_nb_multi_df = _switch_nb_multi_df(run_id, run_dir, pas_gene_lookup)
+    # 2026-08-14: fold nb_multi (diff) + classic/proportion/shannon (length)
+    # into findings_long too, alongside fisher above -- see
+    # _switch_nb_multi_findings_df/_switch_length_findings_df's docstrings
+    # for why this used to be impossible without fabricating fields, and
+    # what changed (delta_proportion/n_reads went Optional on the contract;
+    # slope/spearman are new findings_long columns for the length grain).
+    # This is the fix for "Findings tab only ever shows fisher" -- nb_multi
+    # and all three length strategies were already fully computed and
+    # individually browsable, just never folded into the unified
+    # strategy-filterable Findings browse.
+    for extra_df in (
+        _switch_nb_multi_findings_df(switch_nb_multi_df, pas_uid_lookup),
+        _switch_length_findings_df(switch_trend_gene_df),
+    ):
+        if not extra_df.empty:
+            findings_df = pd.concat([findings_df, extra_df], ignore_index=True) if not findings_df.empty else extra_df
+    # Reindex to findings_long's real column order right before insert --
+    # _insert_df's `INSERT INTO t SELECT * FROM df` is POSITIONAL, and the
+    # four source frames above (engine fixture findings, fisher, nb_multi,
+    # length) each supply a different column subset/order; this guarantees
+    # the final frame matches regardless (missing columns -> NaN, never a
+    # silent column-shift). See _FINDINGS_INSERT_COLUMNS's own docstring.
+    if not findings_df.empty:
+        findings_df = findings_df.reindex(columns=_FINDINGS_INSERT_COLUMNS)
 
     _stats = _run_headline_stats(run_dir, run, len(findings_df), len(length_df))
     atlas_snap_available = _atlas_snap_available(run_dir)

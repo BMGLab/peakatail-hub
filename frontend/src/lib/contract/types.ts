@@ -43,27 +43,55 @@ export interface CellLedgerRow {
   cluster: string | null
 }
 
-/** A row in the long-format switch/diff findings table (one per PAS x strategy x arm). */
+/** A row in the long-format Findings browse table -- TWO grains as of
+ * 2026-08-14 ("make Findings show ALL strategies", not fisher-only):
+ * per-PAS diff findings (`fisher`/`nb_multi`, real `pas_uid`/`qvalue`/
+ * `pvalue`/`n_cells`, `slope`/`spearman` null) and per-gene length
+ * pseudo-findings (`classic`/`proportion`/`shannon`, folded in from the
+ * per-celltype length-trend table -- no `pas_uid`/`qvalue`/`pvalue`/
+ * `n_cells` at that grain, `slope`/`spearman` carry the real numbers
+ * instead). Every nullable field below reflects a REAL grain difference,
+ * not a "sometimes missing" data gap -- always check which grain a row is
+ * before assuming the other half is populated. `'proportion'` rows exist
+ * but are flagged invalid at render time (science-reports: engine defect,
+ * see ResultsCelltypeView's LENGTH_STRATEGIES docstring) -- same caveat,
+ * same reasoning, wherever `strategy === 'proportion'` shows up. */
 export interface FindingRow {
   finding_uid: string
-  pas_uid: string
+  /** Real content-addressed PAS id for diff findings; null for length
+   * pseudo-findings (gene-level grain, no PAS at all). */
+  pas_uid: string | null
   gene_id: string
   /** Human-readable symbol (e.g. "SAMD11"), 2026-08-14 -- hub-side enrichment
    * joined from pas_ledger at query time (backend schemas.py FindingRowView),
    * not part of the raw findings_long grain. null when unavailable. */
   gene_symbol: string | null
+  /** 'ALL_STAGES' sentinel for nb_multi/length rows, which span every
+   * stage at once rather than one pairwise comparison -- never a
+   * fabricated pairwise cluster label. */
   canonical_cluster: string
   celltype: string | null
-  strategy: 'fisher' | 'nb_pairwise' | 'nb_multi'
+  strategy: 'fisher' | 'nb_pairwise' | 'nb_multi' | 'classic' | 'proportion' | 'shannon'
   arm: string
   direction: 'shorten' | 'lengthen' | 'flat' | 'undetermined'
   utr_class: string | null
-  qvalue: number
-  pvalue: number
-  delta_proportion: number
-  log2fc: number
-  n_cells: number
-  n_reads: number
+  /** Real per-PAS significance for fisher/nb_multi; null for length rows
+   * (no PAS-level test exists at that grain -- see slope/spearman below). */
+  qvalue: number | null
+  pvalue: number | null
+  /** null for nb_multi (omnibus test, no pairwise contrast to delta) and
+   * for length rows (no proportion-delta concept at that grain). */
+  delta_proportion: number | null
+  log2fc: number | null
+  /** null for length rows (gene-level grain, no per-PAS cell count). */
+  n_cells: number | null
+  /** null for nb_multi (not reported by the omnibus test) and length rows. */
+  n_reads: number | null
+  /** Real numbers ONLY for length-strategy rows (classic/proportion/
+   * shannon) -- the per-gene slope/Spearman-across-stages call from `ema
+   * switch trend`. null for fisher/nb_multi, which have no such concept. */
+  slope: number | null
+  spearman: number | null
 }
 
 /** A row in the long-format length table (one per PAS/transcript x strategy x cell). */

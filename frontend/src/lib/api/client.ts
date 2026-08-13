@@ -384,8 +384,11 @@ export const api = {
       if (params.celltype) rows = rows.filter((r) => r.celltype === params.celltype)
       if (params.direction) rows = rows.filter((r) => r.direction === params.direction)
       if (params.utr_class) rows = rows.filter((r) => r.utr_class === params.utr_class)
-      if (params.q_max !== undefined) rows = rows.filter((r) => r.qvalue <= params.q_max!)
-      if (params.min_reads !== undefined) rows = rows.filter((r) => r.n_reads >= params.min_reads!)
+      // qvalue/n_reads are null for length-strategy rows (no PAS-level test
+      // at that grain) -- a q_max/min_reads filter can't confirm those
+      // rows satisfy it, so they're excluded rather than ambiguously kept.
+      if (params.q_max !== undefined) rows = rows.filter((r) => r.qvalue !== null && r.qvalue <= params.q_max!)
+      if (params.min_reads !== undefined) rows = rows.filter((r) => r.n_reads !== null && r.n_reads >= params.min_reads!)
       const total = rows.length
       const offset = params.cursor ? Number(params.cursor) : 0
       const limit = params.limit ?? 100

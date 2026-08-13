@@ -116,7 +116,7 @@ function seeded(i: number, salt: number): number {
   return x - Math.floor(x)
 }
 
-export const mockFindings: FindingRow[] = Array.from({ length: 240 }, (_, i) => {
+const _mockDiffFindings: FindingRow[] = Array.from({ length: 240 }, (_, i) => {
   const gene = genes[i % genes.length]!
   const strategy = strategies[i % strategies.length]!
   const direction = directions[i % directions.length]!
@@ -138,8 +138,47 @@ export const mockFindings: FindingRow[] = Array.from({ length: 240 }, (_, i) => 
     log2fc: (seeded(i, 4) - 0.5) * 4,
     n_cells: Math.floor(seeded(i, 5) * 500) + 20,
     n_reads: Math.floor(seeded(i, 6) * 5000) + 100,
+    // slope/spearman (2026-08-14): always null for diff findings -- only
+    // the length-strategy pseudo-findings below carry real numbers.
+    slope: null,
+    spearman: null,
   }
 })
+
+// Length-strategy pseudo-findings (2026-08-14) -- the "Findings shows ALL
+// strategies" fix folds classic/proportion/shannon in as their own
+// selectable `strategy` values too, not just fisher/nb_pairwise/nb_multi.
+// Mock mode needs some so the strategy facet + null-safe columns
+// (qvalue/delta_proportion/n_reads null, slope/spearman real) are
+// realistically exercisable without a live backend.
+const _lengthStrategiesForFindings: FindingRow['strategy'][] = ['classic', 'proportion', 'shannon']
+const _mockLengthFindings: FindingRow[] = Array.from({ length: 60 }, (_, i) => {
+  const gene = genes[i % genes.length]!
+  const strategy = _lengthStrategiesForFindings[i % _lengthStrategiesForFindings.length]!
+  const direction = (['shorten', 'lengthen', 'flat'] as const)[i % 3]!
+  return {
+    finding_uid: `length-finding-${i.toString().padStart(4, '0')}`,
+    pas_uid: null,
+    gene_id: gene.gene_id,
+    gene_symbol: gene.gene_name,
+    canonical_cluster: 'ALL_STAGES',
+    celltype: celltypes[i % celltypes.length]!,
+    strategy,
+    arm: `switch_length:${strategy}`,
+    direction,
+    utr_class: null,
+    qvalue: null,
+    pvalue: null,
+    delta_proportion: null,
+    log2fc: null,
+    n_cells: null,
+    n_reads: null,
+    slope: (seeded(i, 40) - 0.5) * 0.3,
+    spearman: seeded(i, 41) > 0.5 ? 1 : -1,
+  }
+})
+
+export const mockFindings: FindingRow[] = [..._mockDiffFindings, ..._mockLengthFindings]
 
 export const mockLengths: LengthRow[] = Array.from({ length: 120 }, (_, i) => {
   const gene = genes[i % genes.length]!
@@ -549,7 +588,9 @@ export function mockSearch(q: string): SearchResult[] {
     }
   }
   for (const f of mockFindings) {
-    if (f.pas_uid.toLowerCase().includes(query)) {
+    // pas_uid is null for length-strategy pseudo-findings (2026-08-14, no
+    // PAS at that grain) -- skip rather than search a nonexistent id.
+    if (f.pas_uid && f.pas_uid.toLowerCase().includes(query)) {
       results.push({ kind: 'pas', id: f.pas_uid, label: f.pas_uid, sublabel: f.gene_id })
       if (results.length > 20) break
     }
