@@ -582,56 +582,102 @@ def _switch_nb_multi_df(run_id: str, run_dir: Path, pas_gene_lookup: pd.Series) 
     return pd.concat(frames, ignore_index=True)
 
 
-def _switch_trend_dfs(run_id: str, run_dir: Path) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Real-run 3'UTR-length-trend-across-stages source (the professor
-    headline finding): `B3_switch/trend/<celltype>/length_trend.json`
-    (run-x-celltype summary: slope/spearman/direction/mean_by_stage) and
-    `length_trend_by_gene.tsv` (per-gene rows, a few thousand per celltype --
-    cheap to fully ingest, unlike B3_switch/length's per-cell files, see
-    `_switch_availability_df`). Returns `(summary_df, gene_df)`, both
-    possibly empty (never raises) when `B3_switch/trend` doesn't exist.
+_SUMMARY_COLUMNS = ["run_id", "celltype", "n_stages", "slope", "spearman", "direction", "value_col", "mean_by_stage", "strategy"]
+_GENE_COLUMNS = ["run_id", "celltype", "gene_id", "n_stages", "slope", "spearman", "direction", "strategy"]
+
+
+def _read_one_trend(
+    run_id: str, celltype: str, strategy: str, trend_dir: Path
+) -> tuple[dict | None, pd.DataFrame | None]:
+    """One (celltype, strategy) trend result -- `length_trend.json` +
+    `length_trend_by_gene.tsv` inside `trend_dir`. Returns `(summary_row |
+    None, gene_df | None)`; either half may be missing independently (a
+    summary with no per-gene table, or vice versa) without failing the
+    other. Never raises -- a bad file is logged and treated as absent.
     """
-    trend_root = run_dir / "B3_switch" / "trend"
-    if not trend_root.is_dir():
-        return pd.DataFrame(), pd.DataFrame()
-    summary_rows: list[dict] = []
-    gene_frames: list[pd.DataFrame] = []
-    for celltype_dir in sorted(p for p in trend_root.iterdir() if p.is_dir()):
-        celltype = celltype_dir.name
-        json_path = celltype_dir / "length_trend.json"
-        if json_path.exists():
-            try:
-                summary = json.loads(json_path.read_text())
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("run_id=%s: %s unreadable, skipping (%s)", run_id, json_path, exc)
-                summary = None
-            if summary is not None:
-                summary_rows.append(
-                    {
-                        "run_id": run_id,
-                        "celltype": celltype,
-                        "n_stages": summary.get("n_stages"),
-                        "slope": summary.get("slope"),
-                        "spearman": summary.get("spearman"),
-                        "direction": summary.get("direction"),
-                        "value_col": summary.get("value_col"),
-                        "mean_by_stage": json.dumps(summary.get("mean_by_stage") or {}),
-                    }
-                )
-        gene_path = celltype_dir / "length_trend_by_gene.tsv"
-        if gene_path.exists():
-            try:
-                gdf = pd.read_csv(gene_path, sep="\t")
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("run_id=%s: %s unreadable, skipping (%s)", run_id, gene_path, exc)
-                continue
+    summary_row = None
+    json_path = trend_dir / "length_trend.json"
+    if json_path.exists():
+        try:
+            summary = json.loads(json_path.read_text())
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("run_id=%s: %s unreadable, skipping (%s)", run_id, json_path, exc)
+            summary = None
+        if summary is not None:
+            summary_row = {
+                "run_id": run_id,
+                "celltype": celltype,
+                "n_stages": summary.get("n_stages"),
+                "slope": summary.get("slope"),
+                "spearman": summary.get("spearman"),
+                "direction": summary.get("direction"),
+                "value_col": summary.get("value_col"),
+                "mean_by_stage": json.dumps(summary.get("mean_by_stage") or {}),
+                "strategy": strategy,
+            }
+    gene_df = None
+    gene_path = trend_dir / "length_trend_by_gene.tsv"
+    if gene_path.exists():
+        try:
+            gdf = pd.read_csv(gene_path, sep="\t")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("run_id=%s: %s unreadable, skipping (%s)", run_id, gene_path, exc)
+            gdf = None
+        if gdf is not None:
             keep = [c for c in ("gene_id", "n_stages", "slope", "spearman", "direction") if c in gdf.columns]
             gdf = gdf[keep].copy()
             gdf.insert(0, "celltype", celltype)
             gdf.insert(0, "run_id", run_id)
-            gene_frames.append(gdf)
-    summary_df = pd.DataFrame(summary_rows)
-    gene_df = pd.concat(gene_frames, ignore_index=True) if gene_frames else pd.DataFrame()
+            gdf["strategy"] = strategy
+            gene_df = gdf[_GENE_COLUMNS]
+    return summary_row, gene_df
+
+
+def _switch_trend_dfs(run_id: str, run_dir: Path) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Real-run 3'UTR-length-trend-across-stages source (the professor
+    headline finding), now covering all three `B3_switch/length` strategies
+    (2026-08-14, was classic-only): `run-x-celltype summary
+    (slope/spearman/direction/mean_by_stage) and `length_trend_by_gene.tsv`
+    (per-gene rows, a few thousand per celltype -- cheap to fully ingest,
+    unlike B3_switch/length's per-cell files, see `_switch_availability_df`).
+
+    Two directory layouts, both read here (see schema.py's `strategy` column
+    docstring for why they differ): classic is what the pipeline itself
+    always computed, directly at the legacy flat path
+    `trend/<celltype>/length_trend.json`; proportion/shannon are computed
+    out-of-band (the pipeline never ran `ema switch trend` for them -- no
+    comparable per-celltype summary existed) into a per-strategy subdir,
+    `trend/<celltype>/<strategy>/length_trend.json`, mirroring
+    `B3_switch/length/<celltype>/<strategy>/`'s own layout. A celltype can
+    have any subset of the three; each is independent (2026-08-14 principle:
+    "surface all strategies, let the user select"). Returns `(summary_df,
+    gene_df)`, both possibly empty (never raises) when `B3_switch/trend`
+    doesn't exist.
+    """
+    trend_root = run_dir / "B3_switch" / "trend"
+    if not trend_root.is_dir():
+        return pd.DataFrame(columns=_SUMMARY_COLUMNS), pd.DataFrame(columns=_GENE_COLUMNS)
+    summary_rows: list[dict] = []
+    gene_frames: list[pd.DataFrame] = []
+    for celltype_dir in sorted(p for p in trend_root.iterdir() if p.is_dir()):
+        celltype = celltype_dir.name
+        # classic: legacy flat layout, files directly in celltype_dir.
+        summary_row, gene_df = _read_one_trend(run_id, celltype, "classic", celltype_dir)
+        if summary_row is not None:
+            summary_rows.append(summary_row)
+        if gene_df is not None:
+            gene_frames.append(gene_df)
+        # proportion/shannon (and any future strategy): one subdir each,
+        # named after the strategy -- anything that isn't itself a further
+        # nested trend result is just skipped (nothing else lives here).
+        for strategy_dir in sorted(p for p in celltype_dir.iterdir() if p.is_dir()):
+            summary_row, gene_df = _read_one_trend(run_id, celltype, strategy_dir.name, strategy_dir)
+            if summary_row is not None:
+                summary_rows.append(summary_row)
+            if gene_df is not None:
+                gene_frames.append(gene_df)
+    summary_df = pd.DataFrame(summary_rows, columns=_SUMMARY_COLUMNS) if summary_rows else pd.DataFrame(columns=_SUMMARY_COLUMNS)
+    gene_df = pd.concat(gene_frames, ignore_index=True) if gene_frames else pd.DataFrame(columns=_GENE_COLUMNS)
     return summary_df, gene_df
 
 

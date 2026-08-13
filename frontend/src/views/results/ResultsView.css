@@ -144,6 +144,55 @@
   opacity: 0.75;
 }
 
+/* Strategy selector tabs (2026-08-14) -- diff [fisher|nb_multi|nb_pairwise]
+   and length [classic|proportion|shannon] toggles in ResultsCelltypeView.
+   Disabled tabs (data not computed/not run) stay visible but greyed, never
+   hidden -- "surface all strategies, let the user select". */
+.results-view__strategy-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.results-view__strategy-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-surface);
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.results-view__strategy-tab:hover:not(:disabled) {
+  color: var(--text-h);
+  border-color: var(--accent-line, var(--border));
+}
+
+.results-view__strategy-tab.is-active {
+  color: var(--text-h);
+  border-color: var(--accent, var(--border));
+  background: var(--bg-hover);
+  font-weight: 600;
+}
+
+.results-view__strategy-tab:disabled,
+.results-view__strategy-tab.is-unavailable {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.results-view__strategy-tab-note {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  opacity: 0.8;
+}
+
 /* LengthTrendTable search/sort/pagination controls. */
 .results-view__table-toolbar {
   display: flex;

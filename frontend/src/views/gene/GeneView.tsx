@@ -50,7 +50,9 @@ export function GeneView() {
   const runId = useScopeStore((s) => s.runId)
   const geneQuery = useGene(geneId ?? null, runId)
   const switchQuery = useRunSwitch(runId)
-  const trendGenesQuery = useRunSwitchTrendGenes(runId, searchParams.get('celltype'), TREND_LOOKUP_LIMIT)
+  // 'classic' (pdui) -- GeneView's headline stays scoped to the strategy
+  // every run has, independent of ResultsCelltypeView's strategy selector.
+  const trendGenesQuery = useRunSwitchTrendGenes(runId, searchParams.get('celltype'), 'classic', TREND_LOOKUP_LIMIT)
 
   const [engine, setEngine] = useState<Engine>('plotly')
   const [clusterKey, setClusterKey] = useState<ClusterKey>('stage')

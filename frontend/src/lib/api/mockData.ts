@@ -301,6 +301,27 @@ export function mockSwitchResults(runId: string): SwitchResults {
   return { ..._mockSwitchResults, run_id: runId }
 }
 
+// Length-trend strategies (2026-08-14) -- 'classic' is what every real run
+// has (the pipeline itself always computes it); 'proportion'/'shannon' are
+// computed out-of-band and may not exist for every celltype yet. The LAST
+// mock celltype ('Fibroblast', i=3) deliberately omits both, so mock mode
+// exercises ResultsCelltypeView's "not computed" disabled-tab state too --
+// not every celltype in mock mode should look fully backfilled.
+const _LENGTH_STRATEGIES = ['classic', 'proportion', 'shannon'] as const
+
+function _mockTrendFor(strategy: (typeof _LENGTH_STRATEGIES)[number], i: number) {
+  const salt = strategy === 'classic' ? 0 : strategy === 'proportion' ? 40 : 80
+  const slope = i % 2 === 0 ? -0.02 - i * 0.001 - salt * 0.0001 : 0.015 + i * 0.001 + salt * 0.0001
+  return {
+    n_stages: 2,
+    slope,
+    spearman: i % 2 === 0 ? -1 : 1,
+    direction: i % 2 === 0 ? 'decreasing' : 'increasing',
+    value_col: strategy === 'classic' ? 'pdui' : strategy === 'proportion' ? 'proportion' : 'entropy',
+    mean_by_stage: { Normal: 0.04 + i * 0.002 + salt * 0.001, Met: 0.01 + i * 0.001 },
+  }
+}
+
 const _mockSwitchResults: SwitchResults = {
   run_id: 'fixture-run-0001',
   cluster_match: { file_path: 'B3_switch/match/cluster_match.tsv', file_size_bytes: 813810 },
@@ -313,39 +334,38 @@ const _mockSwitchResults: SwitchResults = {
       proportion: { file_size_bytes: 2_700_000_000 + i * 90_000_000 },
       shannon: { file_size_bytes: 800_000_000 + i * 30_000_000 },
     },
-    trend: {
-      n_stages: 2,
-      slope: i % 2 === 0 ? -0.02 - i * 0.001 : 0.015 + i * 0.001,
-      spearman: i % 2 === 0 ? -1 : 1,
-      direction: i % 2 === 0 ? 'decreasing' : 'increasing',
-      value_col: 'pdui',
-      mean_by_stage: { Normal: 0.04 + i * 0.002, Met: 0.01 + i * 0.001 },
-    },
+    trend: Object.fromEntries(
+      _LENGTH_STRATEGIES.filter((s) => s === 'classic' || i < 3).map((s) => [s, _mockTrendFor(s, i)]),
+    ),
   })),
 }
 
-export function mockSwitchTrendGenes(celltype: string): SwitchTrendGeneRow[] {
+export function mockSwitchTrendGenes(celltype: string, strategy = 'classic'): SwitchTrendGeneRow[] {
   const entry = _mockSwitchResults.celltypes.find((c) => c.celltype === celltype)
-  if (!entry) return []
+  const trend = entry?.trend[strategy]
+  if (!entry || !trend) return []
+  const strategySalt = strategy === 'classic' ? 0 : strategy === 'proportion' ? 1 : 2
   const real = genes.map((g, i) => ({
     gene_id: g.gene_id,
     gene_symbol: g.gene_name,
     n_stages: 2,
-    slope: (entry.trend?.slope ?? 0) * (1 - i * 0.1),
-    spearman: entry.trend?.spearman ?? 0,
-    direction: entry.trend?.direction ?? 'decreasing',
+    slope: (trend.slope ?? 0) * (1 - i * 0.1),
+    spearman: trend.spearman ?? 0,
+    direction: trend.direction ?? 'decreasing',
   }))
   // Plus a batch of synthetic rows (2026-08-14) -- the real backend's
   // trend-genes list is a few thousand rows/celltype (length_trend_by_gene.tsv);
   // the 4 fixture genes alone can't exercise LengthTrendTable's search/
   // sort/pagination in mock mode the way a realistically-sized list can.
+  // Salted by strategy so switching the length-strategy tab visibly changes
+  // the table, same as the real per-strategy trend files would.
   const synthetic = Array.from({ length: 120 }, (_, i) => ({
     gene_id: `ENSG9${(100000 + i).toString().padStart(8, '0')}`,
     gene_symbol: `SYNGENE${i + 1}`,
     n_stages: 2,
-    slope: (seeded(i, 30) - 0.5) * 0.5,
-    spearman: seeded(i, 31) > 0.5 ? 1 : -1,
-    direction: seeded(i, 31) > 0.5 ? 'increasing' : 'decreasing',
+    slope: (seeded(i, 30 + strategySalt) - 0.5) * 0.5,
+    spearman: seeded(i, 31 + strategySalt) > 0.5 ? 1 : -1,
+    direction: seeded(i, 31 + strategySalt) > 0.5 ? 'increasing' : 'decreasing',
   }))
   return [...real, ...synthetic]
 }

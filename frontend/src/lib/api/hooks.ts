@@ -26,10 +26,10 @@ export function useRunSwitch(runId: string | null) {
   })
 }
 
-export function useRunSwitchTrendGenes(runId: string | null, celltype: string | null, limit = 50) {
+export function useRunSwitchTrendGenes(runId: string | null, celltype: string | null, strategy = 'classic', limit = 50) {
   return useQuery({
-    queryKey: ['runSwitchTrendGenes', runId, celltype, limit],
-    queryFn: () => api.getRunSwitchTrendGenes(runId!, celltype!, limit),
+    queryKey: ['runSwitchTrendGenes', runId, celltype, strategy, limit],
+    queryFn: () => api.getRunSwitchTrendGenes(runId!, celltype!, strategy, limit),
     enabled: runId !== null && celltype !== null,
   })
 }

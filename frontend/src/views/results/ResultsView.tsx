@@ -17,7 +17,13 @@ function formatBytes(n: number | null | undefined): string {
 
 function CelltypeCard({ celltype }: { celltype: SwitchCelltypeResult }) {
   const navigate = useNavigate()
-  const trend = celltype.trend
+  // Card preview always shows classic's trend (2026-08-14: `trend` is now
+  // keyed by length strategy -- classic is the one every celltype with a
+  // trend result has, since the pipeline itself always computes it;
+  // proportion/shannon are only in the strategy selector on the detail
+  // view). `?? null` not `.classic` alone so `trend &&` below stays a clean
+  // boolean check.
+  const trend = celltype.trend.classic ?? null
   const diffTotal = Object.values(celltype.diff).reduce((a, b) => a + b, 0)
   const lengthStrategies = Object.keys(celltype.length)
 

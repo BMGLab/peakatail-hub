@@ -705,7 +705,7 @@ def switch_summary(con: duckdb.DuckDBPyConnection, run_id: str) -> dict[str, Any
         [run_id],
     ).fetchall()
     trend_rows = con.execute(
-        "SELECT celltype, n_stages, slope, spearman, direction, value_col, mean_by_stage "
+        "SELECT celltype, COALESCE(strategy, 'classic'), n_stages, slope, spearman, direction, value_col, mean_by_stage "
         "FROM switch_trend_summary WHERE run_id = ?",
         [run_id],
     ).fetchall()
@@ -723,7 +723,7 @@ def switch_summary(con: duckdb.DuckDBPyConnection, run_id: str) -> dict[str, Any
 
     def _entry(celltype: str) -> dict[str, Any]:
         return by_celltype.setdefault(
-            celltype, {"celltype": celltype, "diff": {}, "nb_multi": None, "length": {}, "trend": None}
+            celltype, {"celltype": celltype, "diff": {}, "nb_multi": None, "length": {}, "trend": {}}
         )
 
     for celltype, strategy, n in diff_rows:
@@ -732,8 +732,13 @@ def switch_summary(con: duckdb.DuckDBPyConnection, run_id: str) -> dict[str, Any
         _entry(celltype)["nb_multi"] = {"n": n, "n_significant": n_significant}
     for celltype, subkind, size in length_rows:
         _entry(celltype)["length"][subkind] = {"file_size_bytes": size}
-    for celltype, n_stages, slope, spearman, direction, value_col, mean_by_stage in trend_rows:
-        _entry(celltype)["trend"] = {
+    # `trend` is keyed by length strategy (2026-08-14, was a single object --
+    # classic was the only one the pipeline itself ever computed; proportion/
+    # shannon trends are now computed out-of-band the same way, see
+    # index/indexer.py::_switch_trend_dfs) so a celltype can expose whichever
+    # subset of classic/proportion/shannon actually has a trend result.
+    for celltype, strategy, n_stages, slope, spearman, direction, value_col, mean_by_stage in trend_rows:
+        _entry(celltype)["trend"][strategy] = {
             "n_stages": n_stages,
             "slope": slope,
             "spearman": spearman,
@@ -771,20 +776,24 @@ def switch_nb_multi_top(
 
 
 def switch_trend_top_genes(
-    con: duckdb.DuckDBPyConnection, run_id: str, celltype: str, limit: int = 50
+    con: duckdb.DuckDBPyConnection, run_id: str, celltype: str, strategy: str = "classic", limit: int = 50
 ) -> list[dict[str, Any]]:
     """Top genes by |slope| for one celltype's length-trend-across-stages --
     the per-gene drill-down behind the run-level `switch_summary` headline.
+    `strategy` picks which of classic/proportion/shannon (2026-08-14, was
+    classic-only) -- COALESCE'd against NULL so rows written before the
+    `strategy` column existed (always classic's flat layout, see
+    schema.py's docstring) still match `strategy='classic'`.
     """
     rows = con.execute(
         """
         SELECT gene_id, n_stages, slope, spearman, direction
         FROM switch_trend_gene
-        WHERE run_id = ? AND celltype = ?
+        WHERE run_id = ? AND celltype = ? AND COALESCE(strategy, 'classic') = ?
         ORDER BY abs(slope) DESC NULLS LAST
         LIMIT ?
         """,
-        [run_id, celltype, limit],
+        [run_id, celltype, strategy, limit],
     ).fetchall()
     cols = ["gene_id", "n_stages", "slope", "spearman", "direction"]
     return [dict(zip(cols, row, strict=True)) for row in rows]

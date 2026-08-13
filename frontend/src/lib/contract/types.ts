@@ -188,7 +188,12 @@ export interface SwitchCelltypeResult {
   diff: Record<string, number>
   nb_multi: SwitchNbMultiSummary | null
   length: Record<string, SwitchLengthAvailability>
-  trend: SwitchTrend | null
+  /** Keyed by length strategy (2026-08-14, was a single object) -- 'classic'
+   * (pdui, always present when any trend exists) and optionally
+   * 'proportion'/'shannon' when computed out-of-band. A celltype exposes
+   * whichever subset actually has a trend result; an absent key means "not
+   * computed for this strategy", not an error. */
+  trend: Record<string, SwitchTrend>
 }
 
 /** One row of `GET /runs/{id}/switch/{celltype}/nb-multi` -- the per-PAS

@@ -363,9 +363,9 @@ export const api = {
     return fetchJson(`/runs/${runId}/switch`)
   },
 
-  getRunSwitchTrendGenes(runId: string, celltype: string, limit = 50): Promise<SwitchTrendGeneRow[]> {
-    if (USE_MOCKS) return delay(mockSwitchTrendGenes(celltype))
-    return fetchJson(`/runs/${runId}/switch/${encodeURIComponent(celltype)}/trend-genes`, { limit })
+  getRunSwitchTrendGenes(runId: string, celltype: string, strategy = 'classic', limit = 50): Promise<SwitchTrendGeneRow[]> {
+    if (USE_MOCKS) return delay(mockSwitchTrendGenes(celltype, strategy))
+    return fetchJson(`/runs/${runId}/switch/${encodeURIComponent(celltype)}/trend-genes`, { strategy, limit })
   },
 
   /** Per-PAS drill-down behind SwitchCelltypeResult.nb_multi's counts -- a

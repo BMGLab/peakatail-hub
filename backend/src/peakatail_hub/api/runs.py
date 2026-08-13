@@ -76,6 +76,12 @@ def run_switch_results(run_id: str, con: duckdb.DuckDBPyConnection = Depends(get
 def run_switch_trend_genes(
     run_id: str,
     celltype: str,
+    # strategy (2026-08-14): which of classic/proportion/shannon's per-gene
+    # trend table to return -- see SwitchCelltypeResult.trend's docstring.
+    # Defaults to 'classic' (the only one every run has); an unknown/absent
+    # strategy just returns an empty list, not an error -- same "not
+    # computed" handling as an nb_pairwise diff selection would get.
+    strategy: str = Query(default="classic"),
     # 2026-08-14: raised from le=500 -- this is what makes the length
     # results actually BROWSABLE. switch_trend_gene is fully ingested at
     # index time from the small length_trend_by_gene.tsv (a few thousand
@@ -88,15 +94,16 @@ def run_switch_trend_genes(
     con: duckdb.DuckDBPyConnection = Depends(get_db),
 ) -> list[SwitchTrendGene]:
     """Per-gene drill-down behind one celltype's length-trend-across-stages
-    headline (`SwitchResults.celltypes[].trend`) -- top genes by |slope|,
-    the professor headline finding (3'UTR shortening/lengthening across
-    disease stages) at gene resolution. Backs both GeneView's per-gene
-    headline (a small `limit`) and ResultsCelltypeView's full browsable
-    length-results table (a large `limit`, effectively "all genes").
+    headline (`SwitchResults.celltypes[].trend[strategy]`) -- top genes by
+    |slope|, the professor headline finding (3'UTR shortening/lengthening
+    across disease stages) at gene resolution. Backs both GeneView's
+    per-gene headline (a small `limit`) and ResultsCelltypeView's full
+    browsable length-results table (a large `limit`, effectively "all
+    genes"), for whichever length strategy the user has selected.
     """
     if queries.get_run(con, run_id) is None:
         raise HTTPException(status_code=404, detail=f"run_id={run_id!r} not indexed")
-    rows = queries.switch_trend_top_genes(con, run_id, celltype, limit)
+    rows = queries.switch_trend_top_genes(con, run_id, celltype, strategy, limit)
     # gene_symbol (2026-08-14): one batch query scoped to just this page's
     # gene_ids, same pattern as list_genes/list_findings' page-scoped joins.
     symbols = queries.gene_symbol_map(con, run_id, [r["gene_id"] for r in rows])

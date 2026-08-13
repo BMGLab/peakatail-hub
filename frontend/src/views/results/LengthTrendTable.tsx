@@ -25,9 +25,14 @@ type SortKey = 'gene' | 'slope' | 'spearman' | 'n_stages'
  * search by gene symbol or ENSG id, sort by gene/|slope|/spearman/n_stages,
  * 50 rows/page. Each row opens a real geneview scoped to this gene x
  * celltype, same as every other gene table in this view.
+ *
+ * `strategy` (2026-08-14) picks which of classic/proportion/shannon's
+ * per-gene trend table to show -- ResultsCelltypeView's length-strategy
+ * selector drives this; switching strategy refetches (new query key) and
+ * resets search/sort/pagination via the key prop it's mounted with.
  */
-export function LengthTrendTable({ runId, celltype }: { runId: string; celltype: string }) {
-  const query = useRunSwitchTrendGenes(runId, celltype, FETCH_LIMIT)
+export function LengthTrendTable({ runId, celltype, strategy }: { runId: string; celltype: string; strategy: string }) {
+  const query = useRunSwitchTrendGenes(runId, celltype, strategy, FETCH_LIMIT)
   const navigate = useNavigate()
   const [search, setSearch] = useState('')
   const [sortKey, setSortKey] = useState<SortKey>('slope')

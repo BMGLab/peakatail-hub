@@ -386,13 +386,21 @@ class SwitchCelltypeResult(BaseModel):
     per-PAS drill-down via `/runs/{id}/switch/{celltype}/nb-multi`), length
     (availability only -- see `switch_availability` table docstring), and
     trend (the fully-ingested length-across-stages headline).
+
+    `trend` is keyed by length strategy -- 'classic' (pdui, the only one the
+    pipeline itself ever ran `ema switch trend` for), and optionally
+    'proportion'/'shannon' (computed out-of-band the same way, 2026-08-14 --
+    see index/indexer.py::_switch_trend_dfs). A celltype exposes whichever
+    subset actually has a computed trend; the frontend's strategy selector
+    greys out/labels "not computed" whichever key is absent, same principle
+    as `diff` never fabricating an nb_pairwise entry that wasn't run.
     """
 
     celltype: str
     diff: dict[str, int] = Field(default_factory=dict)
     nb_multi: SwitchNbMultiSummary | None = None
     length: dict[str, SwitchLengthAvailability] = Field(default_factory=dict)
-    trend: SwitchTrend | None = None
+    trend: dict[str, SwitchTrend] = Field(default_factory=dict)
 
 
 class ClusterMatchAvailability(BaseModel):

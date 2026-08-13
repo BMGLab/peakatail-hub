@@ -177,6 +177,19 @@ CREATE TABLE IF NOT EXISTS umap_points (
 -- classic/proportion/shannon length results (availability -- NOT
 -- fully ingested, those are per-cell x per-gene files seen up to ~100GB+
 -- for a single cohort run).
+-- `strategy` (2026-08-14, appended last -- see _MIGRATIONS below, ALTER TABLE
+-- ADD COLUMN always appends, and `_insert_df`'s `INSERT INTO t SELECT *
+-- FROM df` is POSITIONAL so a fresh-DB CREATE and an existing-DB ALTER must
+-- agree on column order): which B3_switch/length subkind this trend was
+-- computed from -- 'classic' (pdui, the only one the pipeline itself always
+-- ran `ema switch trend` for), or 'proportion'/'shannon' (computed
+-- out-of-band against the same run's length/<ct>/{proportion,shannon}
+-- TSVs -- see index/indexer.py::_switch_trend_dfs for the two directory
+-- layouts this reads: classic's legacy flat `trend/<ct>/length_trend.json`
+-- vs proportion/shannon's `trend/<ct>/<strategy>/length_trend.json`).
+-- NULL on rows written before this column existed; treat as 'classic' at
+-- query time (COALESCE) rather than backfilling, since the flat layout IS
+-- classic's real layout.
 CREATE TABLE IF NOT EXISTS switch_trend_summary (
     run_id         VARCHAR,
     celltype       VARCHAR,
@@ -185,7 +198,8 @@ CREATE TABLE IF NOT EXISTS switch_trend_summary (
     spearman       DOUBLE,
     direction      VARCHAR,
     value_col      VARCHAR,
-    mean_by_stage  VARCHAR  -- JSON-encoded {stage: mean_value}
+    mean_by_stage  VARCHAR,  -- JSON-encoded {stage: mean_value}
+    strategy       VARCHAR
 );
 
 CREATE TABLE IF NOT EXISTS switch_trend_gene (
@@ -195,7 +209,8 @@ CREATE TABLE IF NOT EXISTS switch_trend_gene (
     n_stages   INTEGER,
     slope      DOUBLE,
     spearman   DOUBLE,
-    direction  VARCHAR
+    direction  VARCHAR,
+    strategy   VARCHAR
 );
 
 CREATE TABLE IF NOT EXISTS switch_availability (
@@ -234,6 +249,7 @@ CREATE TABLE IF NOT EXISTS switch_nb_multi (
 
 CREATE INDEX IF NOT EXISTS idx_switch_trend_summary_run ON switch_trend_summary(run_id);
 CREATE INDEX IF NOT EXISTS idx_switch_trend_gene_run ON switch_trend_gene(run_id, celltype);
+CREATE INDEX IF NOT EXISTS idx_switch_trend_gene_strategy ON switch_trend_gene(run_id, celltype, strategy);
 CREATE INDEX IF NOT EXISTS idx_switch_availability_run ON switch_availability(run_id);
 CREATE INDEX IF NOT EXISTS idx_switch_nb_multi_run ON switch_nb_multi(run_id, celltype);
 CREATE INDEX IF NOT EXISTS idx_switch_nb_multi_gene ON switch_nb_multi(run_id, gene_id);
@@ -260,6 +276,8 @@ _MIGRATIONS = """
 ALTER TABLE runs ADD COLUMN IF NOT EXISTS source_id VARCHAR;
 ALTER TABLE runs ADD COLUMN IF NOT EXISTS atlas_snap_available BOOLEAN;
 ALTER TABLE pas_ledger ADD COLUMN IF NOT EXISTS gene_symbol VARCHAR;
+ALTER TABLE switch_trend_summary ADD COLUMN IF NOT EXISTS strategy VARCHAR;
+ALTER TABLE switch_trend_gene ADD COLUMN IF NOT EXISTS strategy VARCHAR;
 """
 
 

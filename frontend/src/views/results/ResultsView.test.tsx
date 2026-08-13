@@ -41,8 +41,78 @@ describe('ResultsView (Cell Types)', () => {
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Tumor Epithelial' })).toBeInTheDocument())
     expect(screen.getByText('Tumor epithelial')).toBeInTheDocument() // full id kept, shown below the header
     expect(screen.getByRole('heading', { name: /3'UTR length trend across stages/i })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: /switching genes/i })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: /nb_multi omnibus hits/i })).toBeInTheDocument()
+    // 2026-08-14: differential test defaults to fisher (its own strategy
+    // selector, tested separately below) -- nb_multi's table only mounts
+    // once that tab is picked.
+    expect(screen.getByRole('heading', { name: /switching genes -- differential test/i })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /fisher \(pairwise\)/i })).toHaveAttribute('aria-selected', 'true')
+  })
+
+  // 2026-08-14: "surface all strategies, let the user select" -- both diff
+  // [fisher|nb_multi|nb_pairwise] and length [classic|proportion|shannon]
+  // are now explicit tabs on the cell-type view instead of always showing
+  // (diff) or only ever showing classic (length).
+  it('diff strategy selector toggles between fisher and nb_multi, and greys out nb_pairwise as not run', async () => {
+    useScopeStore.setState({ runId: 'fixture-run-0001', datasetId: 'ds1' })
+    renderResults('/results/Tumor%20epithelial')
+
+    const heading = await screen.findByRole('heading', { name: /switching genes -- differential test/i })
+    const panel = within(heading.closest('.panel') as HTMLElement)
+
+    // fisher selected by default -- its pairwise-contrast table shows.
+    await waitFor(() => expect(panel.getByText(/exhaustive within-gene pairwise contrasts/i)).toBeInTheDocument())
+    expect(panel.queryByText(/omnibus likelihood-ratio test/i)).not.toBeInTheDocument()
+
+    // nb_pairwise was never run in this sweep -- shown, but disabled/"not run", not omitted or faked.
+    const nbPairwiseTab = panel.getByRole('tab', { name: /nb_pairwise/i })
+    expect(nbPairwiseTab).toBeDisabled()
+    expect(panel.getByText(/not run/i)).toBeInTheDocument()
+
+    const user = userEvent.setup()
+    await user.click(panel.getByRole('tab', { name: /nb_multi \(omnibus\)/i }))
+
+    // Switching to nb_multi swaps the table entirely -- fisher's is gone.
+    await waitFor(() => expect(panel.getByText(/omnibus likelihood-ratio test/i)).toBeInTheDocument())
+    expect(panel.queryByText(/exhaustive within-gene pairwise contrasts/i)).not.toBeInTheDocument()
+  })
+
+  it('length strategy selector switches the trend headline + browsable table between classic and proportion', async () => {
+    useScopeStore.setState({ runId: 'fixture-run-0001', datasetId: 'ds1' })
+    renderResults('/results/Tumor%20epithelial')
+
+    const trendHeading = await screen.findByRole('heading', { name: /3'UTR length trend across stages/i })
+    const trendPanel = within(trendHeading.closest('.panel') as HTMLElement)
+
+    // Classic's "mean pdui" column header shown by default.
+    await waitFor(() => expect(trendPanel.getByRole('columnheader', { name: /mean pdui/i })).toBeInTheDocument())
+
+    const user = userEvent.setup()
+    await user.click(trendPanel.getByRole('tab', { name: /^proportion$/i }))
+    // Switching tabs swaps in proportion's own value_col/slope -- classic's is gone.
+    await waitFor(() => expect(trendPanel.getByRole('columnheader', { name: /mean proportion/i })).toBeInTheDocument())
+    expect(trendPanel.queryByRole('columnheader', { name: /mean pdui/i })).not.toBeInTheDocument()
+  })
+
+  // classic/proportion/shannon are computed out-of-band per celltype
+  // (2026-08-14) -- 'Fibroblast' is the mock's deliberately-not-yet-
+  // reindexed celltype (only classic has a trend), so it covers the "not
+  // computed" disabled-tab path truthfully rather than faking data.
+  it('disables length strategies without a computed trend, rather than faking or hiding them', async () => {
+    useScopeStore.setState({ runId: 'fixture-run-0001', datasetId: 'ds1' })
+    renderResults('/results/Fibroblast')
+
+    const trendHeading = await screen.findByRole('heading', { name: /3'UTR length trend across stages/i })
+    const trendPanel = within(trendHeading.closest('.panel') as HTMLElement)
+
+    const proportionTab = trendPanel.getByRole('tab', { name: /^proportion/i })
+    expect(proportionTab).toBeDisabled()
+    expect(within(proportionTab).getByText(/not computed/i)).toBeInTheDocument()
+    const shannonTab = trendPanel.getByRole('tab', { name: /shannon entropy/i })
+    expect(shannonTab).toBeDisabled()
+
+    // classic is unaffected -- still selected and showing real data.
+    expect(trendPanel.getByRole('tab', { name: /classic/i })).toHaveAttribute('aria-selected', 'true')
+    expect(trendPanel.getByRole('tab', { name: /classic/i })).not.toBeDisabled()
   })
 
   // 2026-08-14: makes the length results BROWSABLE -- LengthTrendTable
