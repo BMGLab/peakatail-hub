@@ -249,7 +249,6 @@ CREATE TABLE IF NOT EXISTS switch_nb_multi (
 
 CREATE INDEX IF NOT EXISTS idx_switch_trend_summary_run ON switch_trend_summary(run_id);
 CREATE INDEX IF NOT EXISTS idx_switch_trend_gene_run ON switch_trend_gene(run_id, celltype);
-CREATE INDEX IF NOT EXISTS idx_switch_trend_gene_strategy ON switch_trend_gene(run_id, celltype, strategy);
 CREATE INDEX IF NOT EXISTS idx_switch_availability_run ON switch_availability(run_id);
 CREATE INDEX IF NOT EXISTS idx_switch_nb_multi_run ON switch_nb_multi(run_id, celltype);
 CREATE INDEX IF NOT EXISTS idx_switch_nb_multi_gene ON switch_nb_multi(run_id, gene_id);
@@ -280,7 +279,24 @@ ALTER TABLE switch_trend_summary ADD COLUMN IF NOT EXISTS strategy VARCHAR;
 ALTER TABLE switch_trend_gene ADD COLUMN IF NOT EXISTS strategy VARCHAR;
 """
 
+# `idx_switch_trend_gene_strategy` MUST be created here, not in the main DDL
+# block above (2026-08-14 bug found deploying to a pre-existing live DB):
+# `CREATE TABLE IF NOT EXISTS switch_trend_gene (...)` is a no-op on a table
+# that already exists from before the `strategy` column was added -- so if
+# the CREATE INDEX referencing `strategy` were part of that same DDL string,
+# it would run BEFORE `_MIGRATIONS`' `ALTER TABLE ... ADD COLUMN strategy`
+# ever executes, and DuckDB would raise "does not have a column named
+# strategy" (this exact error crashed the live backend's startup on first
+# deploy attempt). Only ever hit on an EXISTING db being migrated -- a fresh
+# db's CREATE TABLE already includes the column, so a from-scratch/fixture
+# test never exercises this ordering bug. Living in `_MIGRATIONS` guarantees
+# the column-adding ALTER has already run in this same `apply_schema` call.
+_POST_MIGRATION_DDL = """
+CREATE INDEX IF NOT EXISTS idx_switch_trend_gene_strategy ON switch_trend_gene(run_id, celltype, strategy);
+"""
+
 
 def apply_schema(con: duckdb.DuckDBPyConnection) -> None:
     con.execute(DDL)
     con.execute(_MIGRATIONS)
+    con.execute(_POST_MIGRATION_DDL)
