@@ -178,16 +178,31 @@ def test_gene_counts_unknown_gene_returns_empty(client):
     assert resp.json()["n_cells"] == 0
 
 
-def test_geneview_svg_placeholder(client):
+# NOTE (2026-08-14): the old geneview.svg/.png PLACEHOLDER-stub endpoints
+# (fake SVG served back for both extensions, tested here as
+# test_geneview_svg_placeholder/test_geneview_png_placeholder) are REMOVED --
+# replaced by the real `ema switch geneview` output via the host-side
+# geneview worker (see api/geneview.py, geneview/client.py,
+# geneview-worker/geneview_worker.py). `.svg` was never a real output
+# extension of that replacement (ema's real outputs are .html/.png/.svg but
+# the hub only serves .html + .png -- see GeneviewRender), so it now 404s;
+# `.png` calls the real worker and must degrade gracefully (not crash) when
+# it's unreachable, which is what these two tests now assert instead.
+
+
+def test_geneview_svg_no_longer_served(client):
     resp = client.get("/genes/ENSG00000000001/geneview.svg")
-    assert resp.status_code == 200
-    assert resp.headers["content-type"].startswith("image/svg+xml")
-    assert b"ENSG00000000001" in resp.content
+    assert resp.status_code == 404
 
 
-def test_geneview_png_placeholder(client):
+def test_geneview_png_degrades_gracefully_when_worker_unreachable(client):
+    # No geneview worker is running in the test environment (it's a separate
+    # host-side process, not part of this app) -- the endpoint must return a
+    # clean, structured error (503, from GeneviewWorkerError) rather than an
+    # unhandled 500/crash.
     resp = client.get("/genes/ENSG00000000001/geneview.png")
-    assert resp.status_code == 200
+    assert resp.status_code == 503
+    assert "geneview worker unreachable" in resp.json()["detail"]
 
 
 def test_pas_detail_and_provenance(client):

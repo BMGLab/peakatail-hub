@@ -374,3 +374,49 @@ class SwitchTrendGene(BaseModel):
     slope: float | None = None
     spearman: float | None = None
     direction: str | None = None
+
+
+class GeneviewPasDistanceRow(BaseModel):
+    """One row of the PAS-distance table `ema switch geneview
+    --pas-distance-table` draws beneath the gene panel (both engines) and
+    writes alongside the figure as `gene_<id>_pas_distances.csv` -- see
+    `geneview-worker/geneview_worker.py`. Exposed here too (not just baked
+    into the image/html) so the hub view can show it as a real, readable
+    table rather than relying on the user squinting at a rendered figure.
+    """
+
+    rank: int
+    pas_id: str
+    chrom: str
+    strand: str
+    start: int
+    end: int
+    width_bp: int
+    summit_pos: int
+    gap_to_next_bp: int | None = None
+    summit_dist_to_next_bp: int | None = None
+
+
+class GeneviewRender(BaseModel):
+    """`GET /genes/{gene_id}/geneview/meta` -- the real ema-generated
+    geneview's metadata + PAS-distance table, alongside the `.html`/`.png`
+    figure endpoints. Replaces the old hand-rolled `GeneviewData` (custom
+    IGV-style track fields: `pas`/`isoforms`/`cluster_tracks`) entirely --
+    see the 2026-08-14 "real ema geneview" fix.
+    """
+
+    gene_id: str
+    gene_name: str = ""
+    run_id: str
+    dataset_id: str
+    cluster_key: str
+    chrom: str | None = None
+    start: int | None = None
+    end: int | None = None
+    strand: str | None = None
+    n_pas: int | None = None
+    n_clusters_rendered: int | None = None
+    n_isoforms: int | None = None
+    cached: bool
+    duration_sec: float
+    pas_distances: list[GeneviewPasDistanceRow] = Field(default_factory=list)

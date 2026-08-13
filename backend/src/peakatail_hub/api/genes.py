@@ -27,13 +27,11 @@ from pathlib import Path
 
 import duckdb
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import FileResponse
 
 from peakatail_contract import FindingRow, LengthRow
 from peakatail_hub import gtf as gtf_reader
 from peakatail_hub.api.deps import get_db
 from peakatail_hub.io_compat import GeneNotFoundError, Run, RunReadError
-from peakatail_hub.render import render_geneview_placeholder
 from peakatail_hub.schemas import (
     GeneListRow,
     GenesPage,
@@ -391,21 +389,11 @@ def gene_counts(
     }
 
 
-def _placeholder_response(gene_id: str, media_type: str, ext: str) -> FileResponse:
-    path = render_geneview_placeholder(gene_id)
-    if ext == "png":
-        # v1 stub only ever produces SVG (task brief: "geneview.svg/.png
-        # stubs can 501/placeholder now"); serve the SVG bytes back with an
-        # honest media type rather than faking a PNG.
-        return FileResponse(path, media_type="image/svg+xml", filename=f"{gene_id}.svg")
-    return FileResponse(path, media_type=media_type, filename=f"{gene_id}.{ext}")
-
-
-@router.get("/{gene_id}/geneview.svg")
-def geneview_svg(gene_id: str) -> FileResponse:
-    return _placeholder_response(gene_id, "image/svg+xml", "svg")
-
-
-@router.get("/{gene_id}/geneview.png")
-def geneview_png(gene_id: str) -> FileResponse:
-    return _placeholder_response(gene_id, "image/png", "png")
+# NOTE (2026-08-14): the `geneview.svg`/`geneview.png` placeholder-stub
+# endpoints that used to live here (`render_geneview_placeholder`, a fake
+# SVG served back for both extensions) are REMOVED -- replaced by the real
+# `ema switch geneview` output, see `api/geneview.py`
+# (`/genes/{id}/geneview.html` for the interactive plotly figure,
+# `/genes/{id}/geneview.png` for the real static matplotlib figure,
+# `/genes/{id}/geneview/meta` for the PAS-distance table). This module keeps
+# no geneview-rendering code of its own anymore.

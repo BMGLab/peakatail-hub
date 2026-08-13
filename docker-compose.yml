@@ -9,13 +9,28 @@ services:
     environment:
       HUB_DB_PATH: /data/hub.duckdb
       HUB_CACHE_DIR: /cache
+      # ── Real ema geneview (2026-08-14) ──────────────────────────────────────
+      # `ema switch geneview` runs on the HOST (the analysis venv, not this
+      # container -- see geneview-worker/README.md for what to start and how).
+      # HUB_RUNS_ROOT_HOST MUST equal PEAKATAIL_RUNS below (same host path,
+      # this container's own view of it) so generated figures -- written by the
+      # host-side worker directly onto the host filesystem -- can be read back
+      # through /runs. host.docker.internal needs `extra_hosts` (below) on
+      # Linux Docker Engine (20.10+); it's automatic on Docker Desktop.
+      HUB_GENEVIEW_WORKER_URL: ${HUB_GENEVIEW_WORKER_URL:-http://host.docker.internal:8095}
+      HUB_RUNS_ROOT_HOST: ${PEAKATAIL_RUNS:-./packages/contract/fixtures}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - hub-db:/data
       - hub-cache:/cache
       # ── READ ACCESS to your PeakATail run data ─────────────────────────────
       # PEAKATAIL_RUNS = a HOST directory containing run_manifest.json file(s)
       # at any depth. Mounted READ-ONLY (:ro) — the hub never writes into your
-      # run dirs. Defaults to the bundled fixture run so it works out of the box.
+      # run dirs (the geneview worker, running on the HOST outside this
+      # container, is what actually writes generated figures under each run's
+      # B3_switch/geneview_cache/ -- this mount only ever needs to read them
+      # back). Defaults to the bundled fixture run so it works out of the box.
       # Index it into DuckDB with `make docker-index` (or `make up`, which does it).
       #   e.g.  PEAKATAIL_RUNS=/mnt/ssd2/.../runs_root make up
       - ${PEAKATAIL_RUNS:-./packages/contract/fixtures}:/runs:ro
